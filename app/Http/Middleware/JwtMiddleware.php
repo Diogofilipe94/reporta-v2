@@ -14,7 +14,7 @@ class JwtMiddleware
         try {
             $user = JWTAuth::parseToken()->authenticate();
         } catch (JWTException $e) {
-            return response()->json(['error' => 'Unauthorized'], 401);
+            return response()->json(['error' => 'Não autorizado'], 401);
         }
         return $next($request);
     }

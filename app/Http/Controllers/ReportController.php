@@ -138,7 +138,7 @@ class ReportController extends Controller
         $report->photo_url = $report->photo ? url('storage/reports/' . $report->photo) : null;
 
         return response()->json([
-            'message' => 'Report updated successfully',
+            'message' => 'Report atualizado com sucesso',
             'report' => $report->load(['categories', 'status'])
         ]);
     }
@@ -151,7 +151,7 @@ class ReportController extends Controller
 
         if (!$report) {
             return response()->json([
-                'error' => 'Report not found'
+                'error' => 'Report não encontrado'
             ], 404);
         }
 
@@ -166,7 +166,7 @@ class ReportController extends Controller
 
         if (!$newStatus) {
             return response()->json([
-                'error' => 'Invalid status'
+                'error' => 'Status inválido'
             ], 400);
         }
 
@@ -175,7 +175,7 @@ class ReportController extends Controller
 
         if ($newOrder <= $currentOrder) {
             return response()->json([
-                'error' => 'Invalid status progression. Status can only move forward: pendente -> em resolução -> resolvido',
+                'error' => 'Progressão de status inválida, este pode apenas movimentar-se na direção: pendente -> em resolução -> resolvido',
                 'current_status' => $currentStatus->status,
                 'attempted_status' => $newStatus->status
             ], 400);
@@ -194,7 +194,7 @@ class ReportController extends Controller
         $this->notificationService->sendToUser(
             $user,
             'Atualização de Status',
-            "O relatório foi atualizado de '{$oldStatus}' para '{$newStatus->status}'",
+            "O seu report foi atualizado de '{$oldStatus}' para '{$newStatus->status}'",
             [
                 'type' => 'status_update',
                 'report_id' => $report->id,
@@ -204,7 +204,7 @@ class ReportController extends Controller
         );
 
         return response()->json([
-            'message' => 'Status updated successfully',
+            'message' => 'Status atualizado com sucesso',
             'report' => $report->load('status')
         ]);
     }
@@ -223,7 +223,7 @@ class ReportController extends Controller
         if($user->role->role !== 'admin' &&
             $user->role->role !== 'curator') {
             return response()->json([
-                'error' => 'Unauthorized. Only admin or curator can delete reports.'
+                'error' => 'Não autorizado a eliminar este report'
             ], 403);
         }
 
@@ -235,7 +235,7 @@ class ReportController extends Controller
         $report->delete();
 
         return response()->json([
-            "message" => "Report deleted successfully"
+            "message" => "Report eliminado com sucesso",
         ]);
     }
 
@@ -277,7 +277,7 @@ class ReportController extends Controller
         // Cálculo de pontos
         $totalPoints = ($pendingCount * 1) + ($inProgressCount * 5) + ($resolvedCount * 10);
 
-        // Atualizar pontos do usuário (opcional)
+        // Atualizar pontos do utilizador
         $user->points = $totalPoints;
         $user->save();
 

@@ -14,20 +14,20 @@ class ReportDetailController extends Controller
 
         if (!$report) {
             return response()->json([
-                'error' => 'Report not found'
+                'error' => 'Report não encontrado'
             ], 404);
         }
 
         $user = auth()->user();
         if ($user->role->role !== 'admin' && $user->role->role !== 'curator') {
             return response()->json([
-                'error' => 'Unauthorized. Only admin or curator can add details.'
+                'error' => 'Não autorizado, apenas administradores ou curadores podem adicionar detalhes.'
             ], 403);
         }
 
         if ($report->detail) {
             return response()->json([
-                'error' => 'Report details already exist'
+                'error' => 'Detalhes de report já existentes'
             ], 400);
         }
 
@@ -40,7 +40,7 @@ class ReportDetailController extends Controller
         $detail->save();
 
         return response()->json([
-            'message' => 'Report details created successfully',
+            'message' => 'Detalhes de report adicionados com sucesso',
             'detail' => $detail
         ], 201);
     }
@@ -51,7 +51,7 @@ class ReportDetailController extends Controller
 
         if (!$report) {
             return response()->json([
-                'error' => 'Report not found'
+                'error' => 'Report não encontrado'
             ], 404);
         }
 
@@ -59,7 +59,7 @@ class ReportDetailController extends Controller
 
         if (!$detail) {
             return response()->json([
-                'error' => 'Report detail not found'
+                'error' => 'Detalhes de report não encontrados'
             ], 404);
         }
 
@@ -79,7 +79,7 @@ class ReportDetailController extends Controller
         $user = auth()->user();
         if ($user->role->role !== 'admin' && $user->role->role !== 'curator') {
             return response()->json([
-                'error' => 'Unauthorized. Only admin or curator can update details.'
+                'error' => 'Não autorizado. Apenas administradores ou curadores podem atualizar detalhes.'
             ], 403);
         }
 
@@ -87,7 +87,7 @@ class ReportDetailController extends Controller
 
         if (!$detail) {
             return response()->json([
-                'error' => 'Report detail not found'
+                'error' => 'Detalhes de report não encontrados'
             ], 404);
         }
 
@@ -107,7 +107,7 @@ class ReportDetailController extends Controller
         $detail->save();
 
         return response()->json([
-            'message' => 'Report details updated successfully',
+            'message' => 'Detalhes do report atualizados com sucesso',
             'detail' => $detail
         ]);
     }

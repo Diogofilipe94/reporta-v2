@@ -16,7 +16,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * Registra ou atualiza um token de dispositivo para o usuário atual
+     * Registra ou atualiza um token de dispositivo para o utilizador atual
      */
     public function registerToken(Request $request)
     {
@@ -29,7 +29,7 @@ class NotificationController extends Controller
         $token = $request->token;
         $platform = $request->platform;
 
-        // Procurar se o token já existe para este usuário
+        // Procurar se o token já existe para este utilizador
         $deviceToken = DeviceToken::where('token', $token)
             ->where('user_id', $user->id)
             ->first();
@@ -52,7 +52,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Token registrado com sucesso',
+            'message' => 'Token registado com sucesso',
         ]);
     }
 
@@ -78,20 +78,4 @@ class NotificationController extends Controller
         ]);
     }
 
-    /**
-     * Teste de envio de notificação para o usuário atual
-     */
-    public function testNotification()
-    {
-        $user = auth()->user();
-
-        $result = $this->notificationService->sendToUser(
-            $user,
-            'Teste de Notificação',
-            'Esta é uma notificação de teste. Se você está vendo isso, as notificações push estão funcionando!',
-            ['type' => 'test']
-        );
-
-        return response()->json($result);
-    }
 }
