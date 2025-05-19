@@ -22,9 +22,9 @@ class ReportController extends Controller
 
     public function store(StoreReportRequest $request)
     {
-        $photoPath = null;
         if ($request->hasFile('photo')) {
             $photoPath = $request->file('photo')->store('reports', 'photosStorage');
+            $report->photo = $photoPath;
         }
 
         $user = auth()->user();
