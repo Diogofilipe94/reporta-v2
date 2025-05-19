@@ -1,0 +1,7 @@
+{
+  "build": {
+    "builder": "nixpacks",
+    "nixpacksVersion": "1.17.0",
+    "buildCommand": "composer install && php artisan config:clear && php artisan cache:clear && php artisan view:clear && chmod -R 777 storage bootstrap/cache"
+  }
+}
