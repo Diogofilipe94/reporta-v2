@@ -194,7 +194,7 @@ class ReportController extends Controller
         $this->notificationService->sendToUser(
             $user,
             'Atualização de Status',
-            "Seu relatório em '{$report->location}' foi atualizado de '{$oldStatus}' para '{$newStatus->status}'",
+            "O relatório foi atualizado de '{$oldStatus}' para '{$newStatus->status}'",
             [
                 'type' => 'status_update',
                 'report_id' => $report->id,
