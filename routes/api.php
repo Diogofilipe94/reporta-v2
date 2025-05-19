@@ -38,4 +38,22 @@ Route::middleware(JwtMiddleware::class)->group(function () {
 
     Route::put('user', [AuthController::class, 'updateUser']);
     Route::get('user', [AuthController::class, 'getUser']);
+
+
+    Route::get('/report-image/{path}', function ($path) {
+        if (Storage::disk('public')->exists('reports/' . $path)) {
+            $file = Storage::disk('public')->get('reports/' . $path);
+            $type = Storage::disk('public')->mimeType('reports/' . $path);
+            return response($file)->header('Content-Type', $type);
+        }
+
+        $volumePath = env('RAILWAY_VOLUME_MOUNT_PATH');
+        if ($volumePath && file_exists($volumePath . '/reports/' . $path)) {
+            $file = file_get_contents($volumePath . '/reports/' . $path);
+            $type = mime_content_type($volumePath . '/reports/' . $path);
+            return response($file)->header('Content-Type', $type);
+        }
+
+        return response()->json(['error' => 'Image not found'], 404);
+    })->where('path', '.*');
 });
