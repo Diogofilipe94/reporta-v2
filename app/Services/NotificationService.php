@@ -9,20 +9,29 @@ use Illuminate\Support\Facades\Log;
 
 class NotificationService
 {
-
     public function sendToUser(User $user, string $title, string $body, array $data = [])
     {
+        \Log::info('sendToUser called', [
+            'user_id' => $user->id,
+            'title' => $title,
+            'body' => $body
+        ]);
+
         $tokens = $user->deviceTokens()->pluck('token')->toArray();
+
+        \Log::info('User device tokens', [
+            'count' => count($tokens),
+            'tokens' => $tokens
+        ]);
+
         return $this->sendToTokens($tokens, $title, $body, $data);
     }
-
 
     public function sendToUsers(array $userIds, string $title, string $body, array $data = [])
     {
         $tokens = DeviceToken::whereIn('user_id', $userIds)->pluck('token')->toArray();
         return $this->sendToTokens($tokens, $title, $body, $data);
     }
-
 
     public function sendToReportOwner(int $reportId, string $title, string $body, array $data = [])
     {
@@ -37,10 +46,10 @@ class NotificationService
         return $this->sendToUser($report->user, $title, $body, $data);
     }
 
-
     private function sendToTokens(array $tokens, string $title, string $body, array $data = [])
     {
         if (empty($tokens)) {
+            \Log::warning('No tokens to send notifications to');
             return [
                 'success' => true,
                 'message' => 'Nenhum token para enviar',
@@ -59,12 +68,16 @@ class NotificationService
             ];
         }
 
+        \Log::info('Sending notifications to Expo API', [
+            'messages_count' => count($messages)
+        ]);
+
         try {
             $response = Http::post('https://exp.host/--/api/v2/push/send', $messages);
 
-            Log::info('Envio de notificações push', [
-                'tokens_count' => count($tokens),
+            \Log::info('Expo API response', [
                 'status' => $response->status(),
+                'body' => $response->json()
             ]);
 
             if ($response->successful()) {
@@ -75,7 +88,7 @@ class NotificationService
                 ];
             }
 
-            Log::error('Erro ao enviar notificações push', [
+            \Log::error('Erro ao enviar notificações push', [
                 'response' => $response->json(),
                 'status' => $response->status(),
             ]);
@@ -86,8 +99,9 @@ class NotificationService
                 'error' => $response->json(),
             ];
         } catch (\Exception $e) {
-            Log::error('Exceção ao enviar notificações push', [
+            \Log::error('Exceção ao enviar notificações push', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             return [

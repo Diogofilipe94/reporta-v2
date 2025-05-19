@@ -9,9 +9,6 @@ use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         $this->app->singleton(NotificationService::class, function ($app) {
@@ -19,9 +16,10 @@ class AppServiceProvider extends ServiceProvider
         });
     }
 
-
     public function boot(): void
     {
+        \Log::info('AppServiceProvider boot method called');
         Report::observe(ReportObserver::class);
+        \Log::info('Report observer registered');
     }
 }
