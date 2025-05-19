@@ -35,4 +35,7 @@ Route::middleware(JwtMiddleware::class)->group(function () {
 
     Route::put('user', [AuthController::class, 'updateUser']);
     Route::get('user', [AuthController::class, 'getUser']);
+
+    Route::get('photos/{filename}', [App\Http\Controllers\PhotoController::class, 'show']);
+
 });

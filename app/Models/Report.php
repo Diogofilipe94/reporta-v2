@@ -14,6 +14,7 @@ class Report extends Model
         'photo',
         'date',
         'status_id',
+        'comments',
         'user_id'
     ];
 

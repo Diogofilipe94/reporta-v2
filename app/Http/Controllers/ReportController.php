@@ -47,6 +47,7 @@ class ReportController extends Controller
         $report->location = $request->location;
         $report->date = now();
         $report->status_id = 1;
+        $report->comment = $request->comment;
         $report->user_id = $user->id;
         $report->save();
 
@@ -110,6 +111,10 @@ class ReportController extends Controller
             // Store new photo
             $photoPath = $request->file('photo')->storeAs('reports', $filename, 'public');
             $report->photo = basename($photoPath);
+        }
+
+        if ($request->has('comment')) {
+            $report->comment = $request->comment;
         }
 
         if ($request->has('location')) {

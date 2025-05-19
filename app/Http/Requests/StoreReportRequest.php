@@ -19,7 +19,8 @@ class StoreReportRequest extends FormRequest
             'location' => 'required|string|max:255|min:5',
             'photo' => 'image|mimes:jpeg,jpg,png,heif',
             'category_id' => 'required|array',
-            'category_id.*' => 'exists:categories,id'
+            'category_id.*' => 'exists:categories,id',
+            'comment' => 'string|max:1024',
         ];
     }
 
@@ -31,7 +32,8 @@ class StoreReportRequest extends FormRequest
             'photo.mimes' => 'A imagem deve ser do tipo: jpeg, jpg, png',
             'category_id.required' => 'Pelo menos uma categoria é obrigatória',
             'category_id.array' => 'As categorias devem ser enviadas em array',
-            'category_id.*.exists' => 'Uma das categorias selecionadas não existe'
+            'category_id.*.exists' => 'Uma das categorias selecionadas não existe',
+            'comment.max' => 'O comentário deve ter no máximo 1024 caracteres',
         ];
     }
 
