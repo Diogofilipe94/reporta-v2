@@ -12,6 +12,13 @@ use Illuminate\Support\Str;
 
 class ReportController extends Controller
 {
+    protected $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     public function index()
     {
         $reports = Report::with(['status', 'categories'])
@@ -138,9 +145,8 @@ class ReportController extends Controller
 
     public function updateStatus(UpdateReportStatusRequest $request, $id)
     {
-        // No changes needed here as it doesn't involve files
         $report = Report::where('id', $id)
-            ->with('status')
+            ->with(['status', 'user'])
             ->first();
 
         if (!$report) {
@@ -175,11 +181,27 @@ class ReportController extends Controller
             ], 400);
         }
 
+        // Armazenar o status antigo para uso na notificação
+        $oldStatus = $currentStatus->status;
+
         $report->status_id = $newStatus->id;
         $report->save();
 
         $user = $report->user;
         $user->calculatePoints();
+
+        // Enviar notificação diretamente após a atualização
+        $this->notificationService->sendToUser(
+            $user,
+            'Atualização de Status',
+            "Seu relatório em '{$report->location}' foi atualizado de '{$oldStatus}' para '{$newStatus->status}'",
+            [
+                'type' => 'status_update',
+                'report_id' => $report->id,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus->status
+            ]
+        );
 
         return response()->json([
             'message' => 'Status updated successfully',

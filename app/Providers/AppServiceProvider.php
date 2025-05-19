@@ -18,8 +18,5 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        \Log::info('AppServiceProvider boot method called');
-        Report::observe(ReportObserver::class);
-        \Log::info('Report observer registered');
     }
 }
