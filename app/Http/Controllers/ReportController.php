@@ -26,7 +26,7 @@ class ReportController extends Controller
             $photoPath = $request->file('photo')->store('reports', 'public');
 
             $report->photo = basename($photoPath);
-    }
+        }
 
         $user = auth()->user();
 
