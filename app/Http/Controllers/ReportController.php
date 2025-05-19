@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateReportRequest;
 use App\Http\Requests\UpdateReportStatusRequest;
 use App\Models\Report;
 use App\Models\Status;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
