@@ -40,20 +40,48 @@ Route::middleware(JwtMiddleware::class)->group(function () {
     Route::get('user', [AuthController::class, 'getUser']);
 
 
-    Route::get('/report-image/{path}', function ($path) {
-        if (Storage::disk('public')->exists('reports/' . $path)) {
-            $file = Storage::disk('public')->get('reports/' . $path);
-            $type = Storage::disk('public')->mimeType('reports/' . $path);
-            return response($file)->header('Content-Type', $type);
+    Route::get('/report-image/{filename}', function ($filename) {
+        // Procura a imagem no diretório storage/app/public/reports
+        $path = storage_path('app/public/reports/' . $filename);
+
+        if (file_exists($path)) {
+            return response()->file($path);
         }
 
+        // Também verifica no volume, se estiver configurado
         $volumePath = env('RAILWAY_VOLUME_MOUNT_PATH');
-        if ($volumePath && file_exists($volumePath . '/reports/' . $path)) {
-            $file = file_get_contents($volumePath . '/reports/' . $path);
-            $type = mime_content_type($volumePath . '/reports/' . $path);
-            return response($file)->header('Content-Type', $type);
+        if ($volumePath && file_exists($volumePath . '/reports/' . $filename)) {
+            return response()->file($volumePath . '/reports/' . $filename);
         }
 
-        return response()->json(['error' => 'Image not found'], 404);
-    })->where('path', '.*');
+        // Tenta buscar por outros caminhos possíveis
+        $alternativePaths = [
+            public_path('storage/reports/' . $filename),
+            base_path('storage/app/public/reports/' . $filename),
+            '/app/storage/app/public/reports/' . $filename,
+        ];
+
+        foreach ($alternativePaths as $altPath) {
+            if (file_exists($altPath)) {
+                return response()->file($altPath);
+            }
+        }
+
+        // Nenhuma imagem encontrada
+        return response()->json(['error' => 'Image not found: ' . $filename], 404);
+    })->where('filename', '[A-Za-z0-9\.]+');
+
+
+    Route::get('/debug', function () {
+    return [
+        'storage_path' => storage_path('app/public/reports'),
+        'public_path' => public_path('storage/reports'),
+        'disk_public_exists' => config('filesystems.disks.public') ? 'sim' : 'não',
+        'storage_link_exists' => file_exists(public_path('storage')) ? 'sim' : 'não',
+        'sample_files' => Storage::disk('public')->files('reports'),
+        'report_dir_exists' => is_dir(storage_path('app/public/reports')) ? 'sim' : 'não',
+        'php_version' => PHP_VERSION,
+        'laravel_version' => app()->version(),
+    ];
+});
 });
