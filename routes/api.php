@@ -5,6 +5,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReportDetailController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Middleware\JwtMiddleware;
 use Illuminate\Support\Facades\Route;
 
@@ -38,4 +39,8 @@ Route::middleware(JwtMiddleware::class)->group(function () {
 
     Route::get('photos/{filename}', [App\Http\Controllers\PhotoController::class, 'show']);
 
+    Route::post('notifications/token', [NotificationController::class, 'registerToken']);
+    Route::delete('notifications/token', [NotificationController::class, 'deleteToken']);
+    Route::get('notifications/tokens', [NotificationController::class, 'getUserTokens']);
+    Route::post('notifications/test', [NotificationController::class, 'testNotification']);
 });

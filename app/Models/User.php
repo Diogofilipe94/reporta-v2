@@ -75,4 +75,9 @@ class User extends Authenticatable implements JWTSubject
 
         return $totalPoints;
     }
+
+    public function deviceTokens(): HasMany
+    {
+        return $this->hasMany(DeviceToken::class);
+    }
 }
