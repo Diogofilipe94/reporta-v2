@@ -59,15 +59,6 @@ return [
             'throw' => false,
             'report' => false,
         ],
-
-	'photosStorage' => [
-	    'driver' => 'local',
-       	    'root' => env('RAILWAY_VOLUME_MOUNT_PATH', '/app/storage/app/public'),
-       	    'url' => env('APP_URL').'/photos',
-       	    'visibility' => 'public',
-            'throw' => false,
-    	],
-
     ],
 
     /*
@@ -82,8 +73,6 @@ return [
     */
 
     'links' => [
-     public_path('storage') => storage_path('app/public'),
-        public_path('photosStorage') => env('RAILWAY_VOLUME_MOUNT_PATH', '/app/storage/app/public'),
+        public_path('storage') => storage_path('app/public'),
     ],
-
 ];

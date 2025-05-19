@@ -8,7 +8,6 @@ use App\Http\Controllers\ReportDetailController;
 use App\Http\Middleware\JwtMiddleware;
 use Illuminate\Support\Facades\Route;
 
-// Rotas de acesso públicas
 Route::post('register', [AuthController::class, 'register']);
 Route::post('login', [AuthController::class, 'login']);
 
@@ -16,9 +15,7 @@ Route::get('address', [AddressController::class, 'index']);
 Route::post('address', [AddressController::class, 'store']);
 
 
-// Rotas protegidas por JWT
 Route::middleware(JwtMiddleware::class)->group(function () {
-    // Reports - CRUD
     Route::get('reports', [ReportController::class, 'index']);
     Route::post('reports', [ReportController::class, 'store']);
     Route::get('reports/{id}', [ReportController::class, 'show']);

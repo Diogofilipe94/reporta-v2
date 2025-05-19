@@ -8,6 +8,7 @@ use App\Http\Requests\UpdateReportStatusRequest;
 use App\Models\Report;
 use App\Models\Status;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ReportController extends Controller
 {
@@ -17,28 +18,42 @@ class ReportController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate(10);
 
+        // Add full photo URL to each report
+        $reports->getCollection()->transform(function ($report) {
+            $report->photo_url = $report->photo ? url('storage/reports/' . $report->photo) : null;
+            return $report;
+        });
+
         return response()->json($reports);
     }
 
     public function store(StoreReportRequest $request)
     {
-        if ($request->hasFile('photo')) {
-            $photoPath = $request->file('photo')->store('reports', 'public');
+        $user = auth()->user();
+        $report = new Report();
+        $photoPath = null;
 
+        if ($request->hasFile('photo')) {
+            // Generate a unique filename with timestamp
+            $filename = Str::uuid() . '_' . time() . '.' . $request->file('photo')->getClientOriginalExtension();
+
+            // Store the file in the public disk under 'reports' directory
+            $photoPath = $request->file('photo')->storeAs('reports', $filename, 'public');
+
+            // Save just the filename to the database
             $report->photo = basename($photoPath);
         }
 
-        $user = auth()->user();
-
-        $report = new Report();
         $report->location = $request->location;
-        $report->photo = $photoPath;
         $report->date = now();
         $report->status_id = 1;
         $report->user_id = $user->id;
         $report->save();
 
         $report->categories()->attach($request->category_id);
+
+        // Add photo URL to response
+        $report->photo_url = $report->photo ? url('storage/reports/' . $report->photo) : null;
 
         return response()->json(
             $report->load(['categories', 'status']),
@@ -57,6 +72,9 @@ class ReportController extends Controller
                 'error' => 'Report not found'
             ], 404);
         }
+
+        // Add photo URL
+        $report->photo_url = $report->photo ? url('storage/reports/' . $report->photo) : null;
 
         return response()->json($report);
     }
@@ -81,10 +99,17 @@ class ReportController extends Controller
         }
 
         if ($request->hasFile('photo')) {
+            // Delete old photo if exists
             if ($report->photo) {
-                Storage::disk('public')->delete($report->photo);
+                Storage::disk('public')->delete('reports/' . $report->photo);
             }
-            $report->photo = $request->file('photo')->store('reports', 'public');
+
+            // Generate unique filename
+            $filename = Str::uuid() . '_' . time() . '.' . $request->file('photo')->getClientOriginalExtension();
+
+            // Store new photo
+            $photoPath = $request->file('photo')->storeAs('reports', $filename, 'public');
+            $report->photo = basename($photoPath);
         }
 
         if ($request->has('location')) {
@@ -97,6 +122,9 @@ class ReportController extends Controller
             $report->categories()->sync($request->category_id);
         }
 
+        // Add photo URL to response
+        $report->photo_url = $report->photo ? url('storage/reports/' . $report->photo) : null;
+
         return response()->json([
             'message' => 'Report updated successfully',
             'report' => $report->load(['categories', 'status'])
@@ -105,6 +133,7 @@ class ReportController extends Controller
 
     public function updateStatus(UpdateReportStatusRequest $request, $id)
     {
+        // No changes needed here as it doesn't involve files
         $report = Report::where('id', $id)
             ->with('status')
             ->first();
@@ -171,8 +200,9 @@ class ReportController extends Controller
             ], 403);
         }
 
+        // Delete photo from storage
         if ($report->photo) {
-            Storage::disk('public')->delete($report->photo);
+            Storage::disk('public')->delete('reports/' . $report->photo);
         }
 
         $report->delete();
@@ -190,11 +220,18 @@ class ReportController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        // Add photo URLs
+        $reports->transform(function ($report) {
+            $report->photo_url = $report->photo ? url('storage/reports/' . $report->photo) : null;
+            return $report;
+        });
+
         return response()->json($reports);
     }
 
     public function getPoints()
     {
+        // No changes needed here as it doesn't involve files
         $user = auth()->user();
 
         // Contadores por status
