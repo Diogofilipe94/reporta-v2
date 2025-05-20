@@ -17,7 +17,11 @@ class NotificationService
             'body' => $body
         ]);
 
-        $tokens = $user->deviceTokens()->pluck('token')->toArray();
+        // Obter apenas tokens ativos
+        $tokens = $user->deviceTokens()
+            ->where('is_active', true)
+            ->pluck('token')
+            ->toArray();
 
         \Log::info('User device tokens', [
             'count' => count($tokens),
@@ -29,7 +33,11 @@ class NotificationService
 
     public function sendToUsers(array $userIds, string $title, string $body, array $data = [])
     {
-        $tokens = DeviceToken::whereIn('user_id', $userIds)->pluck('token')->toArray();
+        $tokens = DeviceToken::whereIn('user_id', $userIds)
+            ->where('is_active', true)
+            ->pluck('token')
+            ->toArray();
+
         return $this->sendToTokens($tokens, $title, $body, $data);
     }
 

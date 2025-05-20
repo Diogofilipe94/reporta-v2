@@ -78,4 +78,40 @@ class NotificationController extends Controller
         ]);
     }
 
+    public function unregisterToken(Request $request)
+    {
+        $request->validate([
+            'token' => 'required|string',
+            'platform' => 'required|string|in:android,ios',
+        ]);
+
+        $user = auth()->user();
+        $token = $request->token;
+
+        $deviceToken = DeviceToken::where('token', $token)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if ($deviceToken) {
+            $deviceToken->update([
+                'is_active' => false,
+                'updated_at' => now(),
+            ]);
+
+            \Log::info('Token desativado com sucesso', [
+                'user_id' => $user->id,
+                'token' => $token
+            ]);
+        } else {
+            \Log::warning('Tentativa de desativar token não encontrado', [
+                'user_id' => $user->id,
+                'token' => $token
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Token desativado com sucesso',
+        ]);
+    }
 }

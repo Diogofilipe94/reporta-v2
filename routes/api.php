@@ -43,4 +43,6 @@ Route::middleware(JwtMiddleware::class)->group(function () {
     Route::delete('notifications/token', [NotificationController::class, 'deleteToken']);
     Route::get('notifications/tokens', [NotificationController::class, 'getUserTokens']);
     Route::post('notifications/test', [NotificationController::class, 'testNotification']);
+    Route::post('/notifications/token/unregister', [NotificationController::class, 'unregisterToken']);
+
 });
