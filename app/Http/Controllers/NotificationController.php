@@ -35,10 +35,16 @@ class NotificationController extends Controller
             ->first();
 
         if ($deviceToken) {
-            // Atualiza o token existente
+            // Atualiza o token existente E reativa
             $deviceToken->update([
                 'platform' => $platform,
                 'last_used_at' => now(),
+                'is_active' => true, // IMPORTANTE: Reativar o token
+            ]);
+
+            \Log::info('Token reativado com sucesso', [
+                'user_id' => $user->id,
+                'token' => $token
             ]);
         } else {
             // Cria um novo registro
@@ -47,6 +53,12 @@ class NotificationController extends Controller
                 'token' => $token,
                 'platform' => $platform,
                 'last_used_at' => now(),
+                'is_active' => true,
+            ]);
+
+            \Log::info('Novo token registrado com sucesso', [
+                'user_id' => $user->id,
+                'token' => $token
             ]);
         }
 
