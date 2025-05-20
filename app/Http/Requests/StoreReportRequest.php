@@ -20,7 +20,7 @@ class StoreReportRequest extends FormRequest
             'photo' => 'image|mimes:jpeg,jpg,png,heif',
             'category_id' => 'required|array',
             'category_id.*' => 'exists:categories,id',
-            'comment' => 'string|max:1024',
+            'comment' => 'string|max:1024|nullable',
         ];
     }
 
