@@ -44,4 +44,10 @@ Route::middleware(JwtMiddleware::class)->group(function () {
     Route::get('notifications/tokens', [NotificationController::class, 'getUserTokens']);
     Route::post('/notifications/token/unregister', [NotificationController::class, 'unregisterToken']);
 
+
+    Route::middleware('is_admin')->prefix('admin')->group(function () {
+        Route::get('users', [AuthController::class, 'getUserRoles']);
+        Route::put('users/{id}/role', [AuthController::class, 'updateUserRole']);
+        Route::delete('users/{id}', [AuthController::class, 'deleteUser']);
+    });
 });
