@@ -46,7 +46,7 @@ Route::middleware(JwtMiddleware::class)->group(function () {
 
 
     Route::middleware('is_admin')->prefix('admin')->group(function () {
-        Route::get('users', [AuthController::class, 'getUserRoles']);
+        Route::get('users/roles', [AuthController::class, 'getUserRoles']);
         Route::put('users/{id}/role', [AuthController::class, 'updateUserRole']);
         Route::delete('users/{id}', [AuthController::class, 'deleteUser']);
     });

@@ -192,6 +192,7 @@ class AuthController extends Controller
             ]
         ]);
     }
+    
     public function deleteUser($id)
     {
         $authenticatedUser = auth()->user();
