@@ -194,7 +194,7 @@ class ReportController extends Controller
         // Enviar notificação diretamente após a atualização
         $this->notificationService->sendToUser(
             $user,
-            'Atualização de Status',
+            'Atualização do seu Report',
             "O seu report foi atualizado de '{$oldStatus}' para '{$newStatus->status}'",
             [
                 'type' => 'status_update',
