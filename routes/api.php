@@ -49,13 +49,13 @@ Route::middleware(JwtMiddleware::class)->group(function () {
     Route::delete('admin/users/{id}', [AuthController::class, 'deleteUser']);
 
     Route::prefix('admin/dashboard')->group(function () {
+        Route::get('debug', [App\Http\Controllers\AdminDashboardController::class, 'getDebugInfo']); // NOVA ROTA DEBUG
         Route::get('overview', [App\Http\Controllers\AdminDashboardController::class, 'getOverviewMetrics']);
         Route::get('resolution', [App\Http\Controllers\AdminDashboardController::class, 'getResolutionMetrics']);
         Route::get('categories', [App\Http\Controllers\AdminDashboardController::class, 'getCategoryMetrics']);
         Route::get('users', [App\Http\Controllers\AdminDashboardController::class, 'getUserMetrics']);
         Route::get('financial', [App\Http\Controllers\AdminDashboardController::class, 'getFinancialMetrics']);
         Route::get('priority', [App\Http\Controllers\AdminDashboardController::class, 'getPriorityMetrics']);
-        Route::get('timeline', [App\Http\Controllers\AdminDashboardController::class, 'getTimelineMetrics']);
         Route::get('export', [App\Http\Controllers\AdminDashboardController::class, 'getExportData']);
     });
 });
