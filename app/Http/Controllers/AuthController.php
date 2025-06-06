@@ -50,7 +50,7 @@ class AuthController extends Controller
 
         if(!$login) {
             return response()->json([
-                "error" => "Wrong credentials"
+                "error" => "Credenciais inválidas"
             ], 400);
         }
 

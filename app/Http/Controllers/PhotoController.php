@@ -24,7 +24,7 @@ class PhotoController extends Controller
             $path = $filename;
 
             if (!Storage::disk('public')->exists($path)) {
-                return response()->json(['error' => 'Image not found'], 404);
+                return response()->json(['error' => 'Imagem não encontrada'], 404);
             }
         }
 
