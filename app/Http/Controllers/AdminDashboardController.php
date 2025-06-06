@@ -13,18 +13,26 @@ use Carbon\Carbon;
 
 class AdminDashboardController extends Controller
 {
-    public function __construct()
+    /**
+     * Verificar se o utilizador tem permissões de admin ou curator
+     */
+    private function checkPermissions()
     {
-        // Garantir que apenas admins e curadores podem aceder
-        $this->middleware(function ($request, $next) {
-            $user = auth()->user();
-            if (!$user || ($user->role->role !== 'admin' && $user->role->role !== 'curator')) {
-                return response()->json([
-                    'error' => 'Acesso negado. Apenas administradores e curadores podem aceder ao dashboard.'
-                ], 403);
-            }
-            return $next($request);
-        });
+        $user = auth()->user();
+
+        if (!$user) {
+            return response()->json([
+                'error' => 'Não autenticado'
+            ], 401);
+        }
+
+        if ($user->role->role !== 'admin' && $user->role->role !== 'curator') {
+            return response()->json([
+                'error' => 'Acesso negado. Apenas administradores e curadores podem aceder ao dashboard.'
+            ], 403);
+        }
+
+        return null; // Sem erro
     }
 
     /**
@@ -32,6 +40,9 @@ class AdminDashboardController extends Controller
      */
     public function getOverviewMetrics()
     {
+        $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError;
+
         try {
             $totalReports = Report::count();
             $totalUsers = User::count();
@@ -78,6 +89,9 @@ class AdminDashboardController extends Controller
      */
     public function getResolutionMetrics()
     {
+        $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError;
+
         try {
             // Tempo médio de resolução (em dias)
             $averageResolutionTime = DB::table('reports')
@@ -139,6 +153,9 @@ class AdminDashboardController extends Controller
      */
     public function getCategoryMetrics()
     {
+        $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError;
+
         try {
             $reportsByCategory = DB::table('reports')
                 ->join('category_report', 'reports.id', '=', 'category_report.report_id')
@@ -178,6 +195,9 @@ class AdminDashboardController extends Controller
      */
     public function getUserMetrics()
     {
+        $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError;
+
         try {
             // Top utilizadores por número de reports
             $topUsersByReports = User::withCount('reports')
@@ -245,7 +265,20 @@ class AdminDashboardController extends Controller
      */
     public function getFinancialMetrics()
     {
+        $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError;
+
         try {
+            // Verificar se a tabela report_details existe
+            if (!DB::getSchemaBuilder()->hasTable('report_details')) {
+                return response()->json([
+                    'total_estimated_cost' => 0,
+                    'average_cost_per_report' => 0,
+                    'costs_by_category' => [],
+                    'costs_by_status' => []
+                ]);
+            }
+
             // Custo total estimado
             $totalEstimatedCost = ReportDetail::sum('estimated_cost') ?? 0;
 
@@ -276,6 +309,9 @@ class AdminDashboardController extends Controller
      */
     public function getPriorityMetrics()
     {
+        $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError;
+
         try {
             $reportsByPriority = [];
             $resolutionTimeByPriority = [];
@@ -317,6 +353,9 @@ class AdminDashboardController extends Controller
      */
     public function getExportData()
     {
+        $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError;
+
         try {
             $data = [
                 'overview' => $this->getOverviewMetrics()->getData(),
