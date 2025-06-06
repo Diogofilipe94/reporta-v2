@@ -21,18 +21,51 @@ class AdminDashboardController extends Controller
         $user = auth()->user();
 
         if (!$user) {
-            return response()->json([
-                'error' => 'Não autenticado'
-            ], 401);
+            return response()->json(['error' => 'Não autenticado'], 401);
         }
 
         if ($user->role->role !== 'admin' && $user->role->role !== 'curator') {
-            return response()->json([
-                'error' => 'Acesso negado. Apenas administradores e curadores podem aceder ao dashboard.'
-            ], 403);
+            return response()->json(['error' => 'Acesso negado. Apenas administradores e curadores podem aceder ao dashboard.'], 403);
         }
 
-        return null; // Sem erro
+        return null;
+    }
+
+    /**
+     * Debug: Verificar estrutura das tabelas
+     */
+    public function getDebugInfo()
+    {
+        $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError;
+
+        try {
+            $info = [
+                'tables' => [],
+                'sample_data' => []
+            ];
+
+            // Verificar tabelas existentes
+            $tables = ['reports', 'categories', 'statuses', 'users', 'category_report', 'report_details'];
+            foreach ($tables as $table) {
+                $info['tables'][$table] = DB::getSchemaBuilder()->hasTable($table);
+            }
+
+            // Sample data
+            $info['sample_data']['reports_count'] = DB::table('reports')->count();
+            $info['sample_data']['categories_count'] = DB::table('categories')->count();
+            $info['sample_data']['statuses'] = DB::table('statuses')->get();
+
+            // Check category_report relationship
+            if ($info['tables']['category_report']) {
+                $info['sample_data']['category_report_count'] = DB::table('category_report')->count();
+                $info['sample_data']['sample_category_report'] = DB::table('category_report')->limit(3)->get();
+            }
+
+            return response()->json($info);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Debug error: ' . $e->getMessage()], 500);
+        }
     }
 
     /**
@@ -44,39 +77,28 @@ class AdminDashboardController extends Controller
         if ($permissionError) return $permissionError;
 
         try {
-            $totalReports = Report::count();
-            $totalUsers = User::count();
-            $totalCategories = Category::count();
+            $totalReports = DB::table('reports')->count();
+            $totalUsers = DB::table('users')->count();
+            $totalCategories = DB::table('categories')->count();
 
-            // Reports por status - versão mais simples
-            $reportsByStatus = [];
-            try {
-                $statusCounts = DB::table('reports')
-                    ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                    ->select('statuses.status', DB::raw('count(*) as count'))
-                    ->groupBy('statuses.status')
-                    ->get();
-
-                foreach ($statusCounts as $statusCount) {
-                    $reportsByStatus[$statusCount->status] = $statusCount->count;
-                }
-            } catch (\Exception $e) {
-                $reportsByStatus = ['pendente' => 0, 'em resolução' => 0, 'resolvido' => 0];
-            }
+            // Reports por status com join explícito
+            $reportsByStatus = DB::table('reports')
+                ->join('statuses', 'reports.status_id', '=', 'statuses.id')
+                ->select('statuses.status', DB::raw('count(*) as count'))
+                ->groupBy('statuses.status')
+                ->pluck('count', 'status')
+                ->toArray();
 
             // Reports criados nos últimos 30 dias
-            $reportsLast30Days = Report::where('created_at', '>=', Carbon::now()->subDays(30))->count();
+            $reportsLast30Days = DB::table('reports')
+                ->where('created_at', '>=', Carbon::now()->subDays(30))
+                ->count();
 
-            // Percentagem de reports resolvidos
-            $resolvedReports = 0;
-            try {
-                $resolvedReports = DB::table('reports')
-                    ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                    ->where('statuses.status', 'resolvido')
-                    ->count();
-            } catch (\Exception $e) {
-                // Ignorar erro
-            }
+            // Reports resolvidos
+            $resolvedReports = DB::table('reports')
+                ->join('statuses', 'reports.status_id', '=', 'statuses.id')
+                ->where('statuses.status', 'resolvido')
+                ->count();
 
             $resolutionRate = $totalReports > 0 ? round(($resolvedReports / $totalReports) * 100, 2) : 0;
 
@@ -92,14 +114,13 @@ class AdminDashboardController extends Controller
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Erro ao carregar métricas: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => 'Erro ao carregar métricas: ' . $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Métricas de resolução de reports
+     * Métricas de resolução corrigidas
      */
     public function getResolutionMetrics()
     {
@@ -107,87 +128,96 @@ class AdminDashboardController extends Controller
         if ($permissionError) return $permissionError;
 
         try {
-            // Tempo médio de resolução (em dias) - versão mais simples
+            // Método alternativo para calcular tempo de resolução
+            // Usar os reports que foram atualizados e têm status resolvido
+            $resolvedReports = DB::table('reports')
+                ->join('statuses', 'reports.status_id', '=', 'statuses.id')
+                ->where('statuses.status', 'resolvido')
+                ->whereNotNull('reports.updated_at')
+                ->whereNotNull('reports.created_at')
+                ->where('reports.updated_at', '!=', 'reports.created_at')
+                ->select(
+                    'reports.id',
+                    'reports.created_at',
+                    'reports.updated_at',
+                    DB::raw('DATEDIFF(reports.updated_at, reports.created_at) as days_to_resolve')
+                )
+                ->get();
+
             $averageResolutionTime = 0;
-            try {
-                $avgTime = DB::table('reports')
+            if ($resolvedReports->count() > 0) {
+                $totalDays = $resolvedReports->sum('days_to_resolve');
+                $averageResolutionTime = round($totalDays / $resolvedReports->count(), 1);
+            }
+
+            // Se ainda for 0, tentar método alternativo
+            if ($averageResolutionTime == 0 && $resolvedReports->count() > 0) {
+                // Calcular usando timestamps
+                $avgSeconds = DB::table('reports')
                     ->join('statuses', 'reports.status_id', '=', 'statuses.id')
                     ->where('statuses.status', 'resolvido')
                     ->whereNotNull('reports.updated_at')
                     ->whereNotNull('reports.created_at')
-                    ->selectRaw('AVG(DATEDIFF(reports.updated_at, reports.created_at)) as avg_days')
-                    ->value('avg_days');
+                    ->selectRaw('AVG(UNIX_TIMESTAMP(reports.updated_at) - UNIX_TIMESTAMP(reports.created_at)) as avg_seconds')
+                    ->value('avg_seconds');
 
-                $averageResolutionTime = $avgTime ? round($avgTime, 1) : 0;
-            } catch (\Exception $e) {
-                // Ignorar erro e manter 0
-            }
-
-            // Reports resolvidos por mês - versão simplificada
-            $resolvedByMonth = [];
-            try {
-                $monthlyData = DB::table('reports')
-                    ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                    ->where('statuses.status', 'resolvido')
-                    ->where('reports.updated_at', '>=', Carbon::now()->subMonths(6))
-                    ->selectRaw('YEAR(reports.updated_at) as year, MONTH(reports.updated_at) as month, COUNT(*) as count')
-                    ->groupBy('year', 'month')
-                    ->orderBy('year', 'asc')
-                    ->orderBy('month', 'asc')
-                    ->get();
-
-                foreach ($monthlyData as $data) {
-                    $resolvedByMonth[] = [
-                        'month' => Carbon::create($data->year, $data->month)->format('M Y'),
-                        'count' => $data->count
-                    ];
+                if ($avgSeconds) {
+                    $averageResolutionTime = round($avgSeconds / 86400, 1); // Convert to days
                 }
-            } catch (\Exception $e) {
-                // Ignorar erro
             }
 
-            // Distribuição por tempo de resolução - versão simplificada
+            // Distribuição por tempo de resolução
             $resolutionTimeDistribution = [];
-            try {
-                $distribution = DB::table('reports')
-                    ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                    ->where('statuses.status', 'resolvido')
-                    ->whereNotNull('reports.updated_at')
-                    ->whereNotNull('reports.created_at')
-                    ->selectRaw('
-                        CASE
-                            WHEN DATEDIFF(reports.updated_at, reports.created_at) <= 1 THEN "1 dia"
-                            WHEN DATEDIFF(reports.updated_at, reports.created_at) <= 7 THEN "1-7 dias"
-                            WHEN DATEDIFF(reports.updated_at, reports.created_at) <= 30 THEN "1-4 semanas"
-                            ELSE "Mais de 1 mês"
-                        END as time_range,
-                        COUNT(*) as count
-                    ')
-                    ->groupBy('time_range')
-                    ->get();
-
-                foreach ($distribution as $dist) {
-                    $resolutionTimeDistribution[$dist->time_range] = $dist->count;
+            foreach ($resolvedReports as $report) {
+                $days = $report->days_to_resolve;
+                if ($days <= 1) {
+                    $range = "1 dia";
+                } elseif ($days <= 7) {
+                    $range = "1-7 dias";
+                } elseif ($days <= 30) {
+                    $range = "1-4 semanas";
+                } else {
+                    $range = "Mais de 1 mês";
                 }
-            } catch (\Exception $e) {
-                // Ignorar erro
+
+                $resolutionTimeDistribution[$range] = ($resolutionTimeDistribution[$range] ?? 0) + 1;
             }
+
+            // Reports resolvidos por mês (últimos 6 meses)
+            $resolvedByMonth = DB::table('reports')
+                ->join('statuses', 'reports.status_id', '=', 'statuses.id')
+                ->where('statuses.status', 'resolvido')
+                ->where('reports.updated_at', '>=', Carbon::now()->subMonths(6))
+                ->selectRaw('YEAR(reports.updated_at) as year, MONTH(reports.updated_at) as month, COUNT(*) as count')
+                ->groupBy('year', 'month')
+                ->orderBy('year', 'asc')
+                ->orderBy('month', 'asc')
+                ->get()
+                ->map(function($item) {
+                    return [
+                        'month' => Carbon::create($item->year, $item->month)->format('M Y'),
+                        'count' => $item->count
+                    ];
+                });
 
             return response()->json([
                 'average_resolution_time_days' => $averageResolutionTime,
                 'resolved_by_month' => $resolvedByMonth,
-                'resolution_time_distribution' => $resolutionTimeDistribution
+                'resolution_time_distribution' => $resolutionTimeDistribution,
+                'debug_info' => [
+                    'resolved_reports_count' => $resolvedReports->count(),
+                    'sample_resolution_times' => $resolvedReports->take(5)->toArray()
+                ]
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Erro ao carregar métricas de resolução: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => 'Erro ao carregar métricas de resolução: ' . $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Métricas por categoria
+     * Métricas por categoria corrigidas
      */
     public function getCategoryMetrics()
     {
@@ -198,34 +228,49 @@ class AdminDashboardController extends Controller
             $reportsByCategory = [];
             $resolutionRateByCategory = [];
 
-            // Verificar se a tabela category_report existe
-            if (!DB::getSchemaBuilder()->hasTable('category_report')) {
-                return response()->json([
-                    'reports_by_category' => [],
-                    'resolution_rate_by_category' => []
-                ]);
-            }
-
-            try {
-                // Reports por categoria
-                $categoryData = DB::table('reports')
-                    ->join('category_report', 'reports.id', '=', 'category_report.report_id')
+            // Primeiro, verificar como as categorias estão relacionadas com reports
+            // Método 1: Tentar via tabela pivot category_report
+            if (DB::getSchemaBuilder()->hasTable('category_report')) {
+                $reportsByCategory = DB::table('category_report')
                     ->join('categories', 'category_report.category_id', '=', 'categories.id')
                     ->select('categories.name', DB::raw('COUNT(*) as count'))
                     ->groupBy('categories.id', 'categories.name')
                     ->orderBy('count', 'desc')
-                    ->get();
-
-                $reportsByCategory = $categoryData->toArray();
-            } catch (\Exception $e) {
-                // Ignorar erro
+                    ->get()
+                    ->toArray();
             }
 
-            try {
-                // Taxa de resolução por categoria
-                $resolutionData = DB::table('reports')
-                    ->join('category_report', 'reports.id', '=', 'category_report.report_id')
+            // Método 2: Se não há dados, tentar via relacionamento direto
+            if (empty($reportsByCategory)) {
+                // Verificar se existe coluna category_id em reports
+                $columns = DB::getSchemaBuilder()->getColumnListing('reports');
+                if (in_array('category_id', $columns)) {
+                    $reportsByCategory = DB::table('reports')
+                        ->join('categories', 'reports.category_id', '=', 'categories.id')
+                        ->select('categories.name', DB::raw('COUNT(*) as count'))
+                        ->groupBy('categories.id', 'categories.name')
+                        ->orderBy('count', 'desc')
+                        ->get()
+                        ->toArray();
+                }
+            }
+
+            // Se ainda estiver vazio, criar dados de exemplo com todas as categorias
+            if (empty($reportsByCategory)) {
+                $categories = DB::table('categories')->get();
+                foreach ($categories as $category) {
+                    $reportsByCategory[] = [
+                        'name' => $category->name,
+                        'count' => 0 // Placeholder
+                    ];
+                }
+            }
+
+            // Taxa de resolução por categoria (se temos dados)
+            if (!empty($reportsByCategory) && DB::getSchemaBuilder()->hasTable('category_report')) {
+                $resolutionRateByCategory = DB::table('category_report')
                     ->join('categories', 'category_report.category_id', '=', 'categories.id')
+                    ->join('reports', 'category_report.report_id', '=', 'reports.id')
                     ->join('statuses', 'reports.status_id', '=', 'statuses.id')
                     ->select('categories.name')
                     ->selectRaw('
@@ -234,21 +279,22 @@ class AdminDashboardController extends Controller
                         ROUND((SUM(CASE WHEN statuses.status = "resolvido" THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) as resolution_rate
                     ')
                     ->groupBy('categories.id', 'categories.name')
-                    ->get();
-
-                $resolutionRateByCategory = $resolutionData->toArray();
-            } catch (\Exception $e) {
-                // Ignorar erro
+                    ->get()
+                    ->toArray();
             }
 
             return response()->json([
                 'reports_by_category' => $reportsByCategory,
-                'resolution_rate_by_category' => $resolutionRateByCategory
+                'resolution_rate_by_category' => $resolutionRateByCategory,
+                'debug_info' => [
+                    'category_report_table_exists' => DB::getSchemaBuilder()->hasTable('category_report'),
+                    'reports_columns' => DB::getSchemaBuilder()->getColumnListing('reports'),
+                    'categories_count' => DB::table('categories')->count()
+                ]
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Erro ao carregar métricas de categoria: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => 'Erro ao carregar métricas de categoria: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -262,80 +308,70 @@ class AdminDashboardController extends Controller
         if ($permissionError) return $permissionError;
 
         try {
-            // Top utilizadores por número de reports - versão mais simples
-            $topUsersByReports = [];
-            try {
-                $topUsers = DB::table('users')
-                    ->leftJoin('reports', 'users.id', '=', 'reports.user_id')
-                    ->select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.points', DB::raw('COUNT(reports.id) as reports_count'))
-                    ->groupBy('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.points')
-                    ->orderBy('reports_count', 'desc')
-                    ->limit(10)
-                    ->get();
-
-                foreach ($topUsers as $user) {
-                    $topUsersByReports[] = [
+            // Top utilizadores por reports
+            $topUsersByReports = DB::table('users')
+                ->leftJoin('reports', 'users.id', '=', 'reports.user_id')
+                ->select(
+                    'users.id',
+                    'users.first_name',
+                    'users.last_name',
+                    'users.email',
+                    'users.points',
+                    DB::raw('COUNT(reports.id) as reports_count')
+                )
+                ->groupBy('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.points')
+                ->orderBy('reports_count', 'desc')
+                ->limit(10)
+                ->get()
+                ->map(function($user) {
+                    return [
                         'id' => $user->id,
                         'name' => $user->first_name . ' ' . $user->last_name,
                         'email' => $user->email,
                         'reports_count' => $user->reports_count,
                         'points' => $user->points ?? 0
                     ];
-                }
-            } catch (\Exception $e) {
-                // Ignorar erro
-            }
+                });
 
-            // Utilizadores mais ativos (últimos 30 dias)
-            $activeUsers = [];
-            try {
-                $recentActiveUsers = DB::table('users')
-                    ->leftJoin('reports', function($join) {
-                        $join->on('users.id', '=', 'reports.user_id')
-                             ->where('reports.created_at', '>=', Carbon::now()->subDays(30));
-                    })
-                    ->select('users.id', 'users.first_name', 'users.last_name', 'users.email', DB::raw('COUNT(reports.id) as recent_reports'))
-                    ->groupBy('users.id', 'users.first_name', 'users.last_name', 'users.email')
-                    ->having('recent_reports', '>', 0)
-                    ->orderBy('recent_reports', 'desc')
-                    ->limit(10)
-                    ->get();
-
-                foreach ($recentActiveUsers as $user) {
-                    $activeUsers[] = [
+            // Utilizadores ativos nos últimos 30 dias
+            $activeUsers = DB::table('users')
+                ->join('reports', 'users.id', '=', 'reports.user_id')
+                ->where('reports.created_at', '>=', Carbon::now()->subDays(30))
+                ->select(
+                    'users.id',
+                    'users.first_name',
+                    'users.last_name',
+                    'users.email',
+                    DB::raw('COUNT(reports.id) as recent_reports')
+                )
+                ->groupBy('users.id', 'users.first_name', 'users.last_name', 'users.email')
+                ->orderBy('recent_reports', 'desc')
+                ->limit(10)
+                ->get()
+                ->map(function($user) {
+                    return [
                         'id' => $user->id,
                         'name' => $user->first_name . ' ' . $user->last_name,
                         'email' => $user->email,
                         'recent_reports' => $user->recent_reports
                     ];
-                }
-            } catch (\Exception $e) {
-                // Ignorar erro
-            }
+                });
 
-            // Distribuição de utilizadores por pontos
-            $pointsDistribution = [];
-            try {
-                $distribution = DB::table('users')
-                    ->selectRaw('
-                        CASE
-                            WHEN points = 0 OR points IS NULL THEN "0 pontos"
-                            WHEN points <= 10 THEN "1-10 pontos"
-                            WHEN points <= 50 THEN "11-50 pontos"
-                            WHEN points <= 100 THEN "51-100 pontos"
-                            ELSE "Mais de 100 pontos"
-                        END as points_range,
-                        COUNT(*) as count
-                    ')
-                    ->groupBy('points_range')
-                    ->get();
-
-                foreach ($distribution as $dist) {
-                    $pointsDistribution[$dist->points_range] = $dist->count;
-                }
-            } catch (\Exception $e) {
-                // Ignorar erro
-            }
+            // Distribuição de pontos
+            $pointsDistribution = DB::table('users')
+                ->selectRaw('
+                    CASE
+                        WHEN points = 0 OR points IS NULL THEN "0 pontos"
+                        WHEN points <= 10 THEN "1-10 pontos"
+                        WHEN points <= 50 THEN "11-50 pontos"
+                        WHEN points <= 100 THEN "51-100 pontos"
+                        ELSE "Mais de 100 pontos"
+                    END as points_range,
+                    COUNT(*) as count
+                ')
+                ->groupBy('points_range')
+                ->pluck('count', 'points_range')
+                ->toArray();
 
             return response()->json([
                 'top_users_by_reports' => $topUsersByReports,
@@ -344,14 +380,13 @@ class AdminDashboardController extends Controller
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Erro ao carregar métricas de utilizadores: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => 'Erro ao carregar métricas de utilizadores: ' . $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Métricas financeiras (baseadas nos detalhes dos reports)
+     * Métricas financeiras
      */
     public function getFinancialMetrics()
     {
@@ -359,7 +394,6 @@ class AdminDashboardController extends Controller
         if ($permissionError) return $permissionError;
 
         try {
-            // Verificar se a tabela report_details existe
             if (!DB::getSchemaBuilder()->hasTable('report_details')) {
                 return response()->json([
                     'total_estimated_cost' => 0,
@@ -369,10 +403,7 @@ class AdminDashboardController extends Controller
                 ]);
             }
 
-            // Custo total estimado
             $totalEstimatedCost = DB::table('report_details')->sum('estimated_cost') ?? 0;
-
-            // Custo médio por report
             $averageCostPerReport = DB::table('report_details')->avg('estimated_cost') ?? 0;
 
             return response()->json([
@@ -383,8 +414,7 @@ class AdminDashboardController extends Controller
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Erro ao carregar métricas financeiras: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => 'Erro ao carregar métricas financeiras: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -398,10 +428,6 @@ class AdminDashboardController extends Controller
         if ($permissionError) return $permissionError;
 
         try {
-            $reportsByPriority = [];
-            $resolutionTimeByPriority = [];
-
-            // Verificar se a tabela report_details existe
             if (!DB::getSchemaBuilder()->hasTable('report_details')) {
                 return response()->json([
                     'reports_by_priority' => [],
@@ -409,39 +435,24 @@ class AdminDashboardController extends Controller
                 ]);
             }
 
-            try {
-                // Reports por prioridade
-                $priorityData = DB::table('report_details')
-                    ->select('priority', DB::raw('COUNT(*) as count'))
-                    ->groupBy('priority')
-                    ->get();
+            $reportsByPriority = DB::table('report_details')
+                ->select('priority', DB::raw('COUNT(*) as count'))
+                ->groupBy('priority')
+                ->pluck('count', 'priority')
+                ->toArray();
 
-                foreach ($priorityData as $data) {
-                    $reportsByPriority[$data->priority] = $data->count;
-                }
-            } catch (\Exception $e) {
-                // Ignorar erro
-            }
-
-            try {
-                // Tempo de resolução por prioridade
-                $resolutionData = DB::table('report_details')
-                    ->join('reports', 'report_details.report_id', '=', 'reports.id')
-                    ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                    ->where('statuses.status', 'resolvido')
-                    ->whereNotNull('reports.updated_at')
-                    ->whereNotNull('reports.created_at')
-                    ->select('report_details.priority')
-                    ->selectRaw('AVG(DATEDIFF(reports.updated_at, reports.created_at)) as avg_days')
-                    ->groupBy('report_details.priority')
-                    ->get();
-
-                foreach ($resolutionData as $data) {
-                    $resolutionTimeByPriority[$data->priority] = round($data->avg_days, 1);
-                }
-            } catch (\Exception $e) {
-                // Ignorar erro
-            }
+            $resolutionTimeByPriority = DB::table('report_details')
+                ->join('reports', 'report_details.report_id', '=', 'reports.id')
+                ->join('statuses', 'reports.status_id', '=', 'statuses.id')
+                ->where('statuses.status', 'resolvido')
+                ->select('report_details.priority')
+                ->selectRaw('AVG(DATEDIFF(reports.updated_at, reports.created_at)) as avg_days')
+                ->groupBy('report_details.priority')
+                ->pluck('avg_days', 'priority')
+                ->map(function($days) {
+                    return round($days, 1);
+                })
+                ->toArray();
 
             return response()->json([
                 'reports_by_priority' => $reportsByPriority,
@@ -449,14 +460,13 @@ class AdminDashboardController extends Controller
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Erro ao carregar métricas de prioridade: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => 'Erro ao carregar métricas de prioridade: ' . $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Dados exportáveis para relatório completo
+     * Dados exportáveis
      */
     public function getExportData()
     {
@@ -477,8 +487,7 @@ class AdminDashboardController extends Controller
             return response()->json($data);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Erro ao exportar dados: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => 'Erro ao exportar dados: ' . $e->getMessage()
             ], 500);
         }
     }
