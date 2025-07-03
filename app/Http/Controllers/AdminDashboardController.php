@@ -10,7 +10,6 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Log;
 
 class AdminDashboardController extends Controller
 {
@@ -19,57 +18,17 @@ class AdminDashboardController extends Controller
      */
     private function checkPermissions()
     {
-        try {
-            $user = auth()->user();
+        $user = auth()->user();
 
-            if (!$user) {
-                return response()->json(['error' => 'Não autenticado'], 401);
-            }
-
-            // Debug: Log user info
-            Log::info('Dashboard access attempt', [
-                'user_id' => $user->id,
-                'user_email' => $user->email ?? 'no email',
-                'has_role' => isset($user->role),
-                'role_data' => $user->role ?? 'no role'
-            ]);
-
-            // Verificação mais flexível do role
-            if (!isset($user->role)) {
-                return response()->json(['error' => 'Utilizador sem role definido'], 403);
-            }
-
-            $roleValue = null;
-
-            // Tentar diferentes formas de acessar o role
-            if (is_object($user->role)) {
-                $roleValue = $user->role->role ?? $user->role->name ?? null;
-            } elseif (is_string($user->role)) {
-                $roleValue = $user->role;
-            } elseif (is_numeric($user->role)) {
-                // Se role é numérico, considerar 2=curator, 3=admin
-                $roleValue = ($user->role == 2 || $user->role == 3) ? 'admin' : 'user';
-            }
-
-            Log::info('Role check', ['role_value' => $roleValue]);
-
-            if (!in_array($roleValue, ['admin', 'curator'])) {
-                return response()->json([
-                    'error' => 'Acesso negado. Apenas administradores e curadores podem aceder ao dashboard.',
-                    'debug_info' => [
-                        'user_role' => $roleValue,
-                        'expected' => ['admin', 'curator']
-                    ]
-                ], 403);
-            }
-
-            return null;
-        } catch (\Exception $e) {
-            Log::error('Permission check error', ['error' => $e->getMessage()]);
-            return response()->json([
-                'error' => 'Erro na verificação de permissões: ' . $e->getMessage()
-            ], 500);
+        if (!$user) {
+            return response()->json(['error' => 'Não autenticado'], 401);
         }
+
+        if ($user->role->role !== 'admin' && $user->role->role !== 'curator') {
+            return response()->json(['error' => 'Acesso negado. Apenas administradores e curadores podem aceder ao dashboard.'], 403);
+        }
+
+        return null;
     }
 
     /**
@@ -92,59 +51,53 @@ class AdminDashboardController extends Controller
      */
     public function getDebugInfo()
     {
-        try {
-            // Não verificar permissões no debug para diagnosticar problemas de auth
-            Log::info('Debug endpoint called');
+        $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError;
 
+        try {
             $info = [
-                'timestamp' => now()->toISOString(),
                 'database_driver' => DB::connection()->getDriverName(),
-                'auth_user' => auth()->user() ? [
-                    'id' => auth()->user()->id,
-                    'email' => auth()->user()->email ?? 'no email',
-                    'role_raw' => auth()->user()->role ?? 'no role'
-                ] : 'not authenticated',
                 'tables' => [],
                 'columns' => [],
                 'sample_data' => []
             ];
 
             // Verificar tabelas existentes
-            $tables = ['reports', 'categories', 'statuses', 'users', 'category_report', 'report_details', 'roles'];
+            $tables = ['reports', 'categories', 'statuses', 'users', 'category_report', 'report_details'];
             foreach ($tables as $table) {
-                try {
-                    $exists = DB::getSchemaBuilder()->hasTable($table);
-                    $info['tables'][$table] = $exists;
+                $exists = DB::getSchemaBuilder()->hasTable($table);
+                $info['tables'][$table] = $exists;
 
-                    if ($exists) {
+                if ($exists) {
+                    try {
                         $info['columns'][$table] = DB::getSchemaBuilder()->getColumnListing($table);
-                        $info['sample_data'][$table . '_count'] = DB::table($table)->count();
+                    } catch (\Exception $e) {
+                        $info['columns'][$table] = 'Error: ' . $e->getMessage();
                     }
-                } catch (\Exception $e) {
-                    $info['tables'][$table] = 'Error: ' . $e->getMessage();
                 }
             }
 
-            // Amostra de dados importantes
-            try {
-                if ($info['tables']['categories'] === true) {
-                    $info['sample_data']['categories_sample'] = DB::table('categories')->limit(2)->get();
-                }
+            // Sample data
+            $info['sample_data']['reports_count'] = DB::table('reports')->count();
+            $info['sample_data']['categories_count'] = DB::table('categories')->count();
 
-                if ($info['tables']['statuses'] === true) {
-                    $info['sample_data']['statuses'] = DB::table('statuses')->get();
-                }
+            // Amostra da estrutura de categories
+            if ($info['tables']['categories']) {
+                $info['sample_data']['categories_sample'] = DB::table('categories')->limit(2)->get();
+            }
 
-                if ($info['tables']['roles'] === true) {
-                    $info['sample_data']['roles'] = DB::table('roles')->get();
-                }
-            } catch (\Exception $e) {
-                $info['sample_data']['sample_error'] = $e->getMessage();
+            if ($info['tables']['statuses']) {
+                $info['sample_data']['statuses'] = DB::table('statuses')->get();
+            }
+
+            // Check category_report relationship
+            if ($info['tables']['category_report']) {
+                $info['sample_data']['category_report_count'] = DB::table('category_report')->count();
+                $info['sample_data']['sample_category_report'] = DB::table('category_report')->limit(3)->get();
             }
 
             return response()->json($info);
         } catch (\Exception $e) {
-            Log::error('Debug error', ['error' => $e->getMessage()]);
             return response()->json(['error' => 'Debug error: ' . $e->getMessage()], 500);
         }
     }
@@ -158,83 +111,32 @@ class AdminDashboardController extends Controller
         if ($permissionError) return $permissionError;
 
         try {
-            Log::info('Starting overview metrics');
+            $totalReports = DB::table('reports')->count();
+            $totalUsers = DB::table('users')->count();
+            $totalCategories = DB::table('categories')->count();
 
-            // Verificar existência das tabelas primeiro
-            $requiredTables = ['reports', 'users', 'categories', 'statuses'];
-            foreach ($requiredTables as $table) {
-                if (!DB::getSchemaBuilder()->hasTable($table)) {
-                    throw new \Exception("Tabela necessária não encontrada: {$table}");
-                }
-            }
-
-            // Counts básicos com tratamento de erro individual
-            $totalReports = 0;
-            $totalUsers = 0;
-            $totalCategories = 0;
-
-            try {
-                $totalReports = DB::table('reports')->count();
-                Log::info('Reports count', ['count' => $totalReports]);
-            } catch (\Exception $e) {
-                Log::error('Error counting reports', ['error' => $e->getMessage()]);
-            }
-
-            try {
-                $totalUsers = DB::table('users')->count();
-                Log::info('Users count', ['count' => $totalUsers]);
-            } catch (\Exception $e) {
-                Log::error('Error counting users', ['error' => $e->getMessage()]);
-            }
-
-            try {
-                $totalCategories = DB::table('categories')->count();
-                Log::info('Categories count', ['count' => $totalCategories]);
-            } catch (\Exception $e) {
-                Log::error('Error counting categories', ['error' => $e->getMessage()]);
-            }
-
-            // Reports por status com tratamento de erro
-            $reportsByStatus = [];
-            try {
-                $reportsByStatus = DB::table('reports')
-                    ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                    ->select('statuses.status', DB::raw('count(*) as count'))
-                    ->groupBy('statuses.status')
-                    ->pluck('count', 'status')
-                    ->toArray();
-                Log::info('Reports by status', ['data' => $reportsByStatus]);
-            } catch (\Exception $e) {
-                Log::error('Error getting reports by status', ['error' => $e->getMessage()]);
-                $reportsByStatus = [];
-            }
+            // Reports por status com join explícito
+            $reportsByStatus = DB::table('reports')
+                ->join('statuses', 'reports.status_id', '=', 'statuses.id')
+                ->select('statuses.status', DB::raw('count(*) as count'))
+                ->groupBy('statuses.status')
+                ->pluck('count', 'status')
+                ->toArray();
 
             // Reports criados nos últimos 30 dias
-            $reportsLast30Days = 0;
-            try {
-                $reportsLast30Days = DB::table('reports')
-                    ->where('created_at', '>=', Carbon::now()->subDays(30))
-                    ->count();
-                Log::info('Reports last 30 days', ['count' => $reportsLast30Days]);
-            } catch (\Exception $e) {
-                Log::error('Error counting recent reports', ['error' => $e->getMessage()]);
-            }
+            $reportsLast30Days = DB::table('reports')
+                ->where('created_at', '>=', Carbon::now()->subDays(30))
+                ->count();
 
             // Reports resolvidos
-            $resolvedReports = 0;
-            try {
-                $resolvedReports = DB::table('reports')
-                    ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                    ->where('statuses.status', 'resolvido')
-                    ->count();
-                Log::info('Resolved reports', ['count' => $resolvedReports]);
-            } catch (\Exception $e) {
-                Log::error('Error counting resolved reports', ['error' => $e->getMessage()]);
-            }
+            $resolvedReports = DB::table('reports')
+                ->join('statuses', 'reports.status_id', '=', 'statuses.id')
+                ->where('statuses.status', 'resolvido')
+                ->count();
 
             $resolutionRate = $totalReports > 0 ? round(($resolvedReports / $totalReports) * 100, 2) : 0;
 
-            $result = [
+            return response()->json([
                 'total_reports' => $totalReports,
                 'total_users' => $totalUsers,
                 'total_categories' => $totalCategories,
@@ -243,25 +145,10 @@ class AdminDashboardController extends Controller
                 'resolution_rate' => $resolutionRate,
                 'resolved_reports' => $resolvedReports,
                 'pending_reports' => $totalReports - $resolvedReports
-            ];
-
-            Log::info('Overview metrics completed', $result);
-            return response()->json($result);
-
-        } catch (\Exception $e) {
-            Log::error('Overview metrics error', [
-                'error' => $e->getMessage(),
-                'line' => $e->getLine(),
-                'file' => $e->getFile()
             ]);
-
+        } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Erro ao carregar métricas: ' . $e->getMessage(),
-                'debug' => [
-                    'line' => $e->getLine(),
-                    'file' => basename($e->getFile()),
-                    'trace' => $e->getTraceAsString()
-                ]
+                'error' => 'Erro ao carregar métricas: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -370,7 +257,7 @@ class AdminDashboardController extends Controller
     }
 
     /**
-     * Métricas por categoria corrigidas e melhoradas
+     * Métricas por categoria corrigidas
      */
     public function getCategoryMetrics()
     {
@@ -381,219 +268,128 @@ class AdminDashboardController extends Controller
             $reportsByCategory = [];
             $resolutionRateByCategory = [];
 
-            // Verificar estrutura das tabelas
+            // Verificar se existe tabela category_report
             $hasCategoryReportTable = DB::getSchemaBuilder()->hasTable('category_report');
+
+            // Verificar se reports tem coluna category_id
             $reportsColumns = DB::getSchemaBuilder()->getColumnListing('reports');
-            $categoriesColumns = DB::getSchemaBuilder()->getColumnListing('categories');
             $hasCategoryIdColumn = in_array('category_id', $reportsColumns);
 
-            // Detectar qual campo usar para nome da categoria
-            $categoryNameField = null;
-            if (in_array('name', $categoriesColumns)) {
-                $categoryNameField = 'name';
-            } elseif (in_array('category_name', $categoriesColumns)) {
-                $categoryNameField = 'category_name';
-            } elseif (in_array('title', $categoriesColumns)) {
-                $categoryNameField = 'title';
-            } elseif (in_array('description', $categoriesColumns)) {
-                $categoryNameField = 'description';
-            }
-
-            // Verificar se há reports no sistema
-            $totalReports = DB::table('reports')->count();
-
-            if ($totalReports === 0) {
-                return response()->json([
-                    'reports_by_category' => [
-                        ['name' => 'Nenhum report encontrado', 'count' => 0]
-                    ],
-                    'resolution_rate_by_category' => [],
-                    'debug_info' => [
-                        'total_reports' => 0,
-                        'message' => 'Não existem reports no sistema'
-                    ]
-                ]);
-            }
-
-            // Método 1: Tentar usar tabela pivot category_report
-            if ($hasCategoryReportTable && $categoryNameField) {
+            if ($hasCategoryReportTable) {
+                // Método 1: Usar tabela pivot
                 try {
                     $categoryData = DB::table('category_report')
                         ->join('categories', 'category_report.category_id', '=', 'categories.id')
-                        ->select(
-                            "categories.{$categoryNameField} as category_name",
-                            'categories.id',
-                            DB::raw('COUNT(*) as count')
-                        )
-                        ->groupBy('categories.id', "categories.{$categoryNameField}")
+                        ->select('categories.name', 'categories.id', DB::raw('COUNT(*) as count'))
+                        ->groupBy('categories.id', 'categories.name')
                         ->orderBy('count', 'desc')
                         ->get();
 
                     foreach ($categoryData as $item) {
+                        // Verificar se a propriedade existe antes de usar
+                        $categoryName = property_exists($item, 'name') ? $item->name : 'Categoria sem nome';
                         $reportsByCategory[] = [
-                            'name' => $item->category_name ?? 'Categoria sem nome',
+                            'name' => $categoryName,
                             'count' => $item->count ?? 0
                         ];
                     }
 
-                    // Taxa de resolução por categoria usando pivot
-                    if (!empty($reportsByCategory)) {
-                        $resolutionData = DB::table('category_report')
-                            ->join('categories', 'category_report.category_id', '=', 'categories.id')
-                            ->join('reports', 'category_report.report_id', '=', 'reports.id')
-                            ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                            ->select(
-                                "categories.{$categoryNameField} as category_name",
-                                DB::raw('COUNT(*) as total'),
-                                DB::raw("SUM(CASE WHEN statuses.status = 'resolvido' THEN 1 ELSE 0 END) as resolved")
-                            )
-                            ->groupBy('categories.id', "categories.{$categoryNameField}")
-                            ->get();
-
-                        foreach ($resolutionData as $item) {
-                            $total = $item->total ?? 0;
-                            $resolved = $item->resolved ?? 0;
-                            $resolutionRate = $total > 0 ? round(($resolved / $total) * 100, 2) : 0;
-
-                            $resolutionRateByCategory[] = [
-                                'name' => $item->category_name ?? 'Categoria sem nome',
-                                'total' => $total,
-                                'resolved' => $resolved,
-                                'resolution_rate' => $resolutionRate
-                            ];
-                        }
-                    }
-                } catch (\Exception $e) {
-                    // Log do erro mas continue tentando outros métodos
-                    error_log("Erro no método pivot: " . $e->getMessage());
-                }
-            }
-
-            // Método 2: Tentar usar coluna category_id diretamente
-            if (empty($reportsByCategory) && $hasCategoryIdColumn && $categoryNameField) {
-                try {
-                    $categoryData = DB::table('reports')
-                        ->join('categories', 'reports.category_id', '=', 'categories.id')
+                    // Taxa de resolução por categoria
+                    $resolutionData = DB::table('category_report')
+                        ->join('categories', 'category_report.category_id', '=', 'categories.id')
+                        ->join('reports', 'category_report.report_id', '=', 'reports.id')
+                        ->join('statuses', 'reports.status_id', '=', 'statuses.id')
                         ->select(
-                            "categories.{$categoryNameField} as category_name",
+                            'categories.name',
                             'categories.id',
-                            DB::raw('COUNT(*) as count')
-                        )
-                        ->whereNotNull('reports.category_id')
-                        ->groupBy('categories.id', "categories.{$categoryNameField}")
-                        ->orderBy('count', 'desc')
-                        ->get();
-
-                    foreach ($categoryData as $item) {
-                        $reportsByCategory[] = [
-                            'name' => $item->category_name ?? 'Categoria sem nome',
-                            'count' => $item->count ?? 0
-                        ];
-                    }
-
-                    // Taxa de resolução usando relacionamento direto
-                    if (!empty($reportsByCategory)) {
-                        $resolutionData = DB::table('reports')
-                            ->join('categories', 'reports.category_id', '=', 'categories.id')
-                            ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                            ->select(
-                                "categories.{$categoryNameField} as category_name",
                             DB::raw('COUNT(*) as total'),
-                            DB::raw("SUM(CASE WHEN statuses.status = 'resolvido' THEN 1 ELSE 0 END) as resolved")
+                            DB::raw('SUM(CASE WHEN statuses.status = ? THEN 1 ELSE 0 END) as resolved')
                         )
-                        ->whereNotNull('reports.category_id')
-                        ->groupBy('categories.id', "categories.{$categoryNameField}")
+                        ->setBindings(['resolvido'])
+                        ->groupBy('categories.id', 'categories.name')
                         ->get();
 
                     foreach ($resolutionData as $item) {
+                        $categoryName = property_exists($item, 'name') ? $item->name : 'Categoria sem nome';
                         $total = $item->total ?? 0;
                         $resolved = $item->resolved ?? 0;
                         $resolutionRate = $total > 0 ? round(($resolved / $total) * 100, 2) : 0;
 
                         $resolutionRateByCategory[] = [
-                            'name' => $item->category_name ?? 'Categoria sem nome',
+                            'name' => $categoryName,
                             'total' => $total,
                             'resolved' => $resolved,
                             'resolution_rate' => $resolutionRate
                         ];
                     }
+                } catch (\Exception $e) {
+                    // Se falhar, tentar método alternativo
+                    $reportsByCategory = [];
+                    $resolutionRateByCategory = [];
                 }
-            } catch (\Exception $e) {
-                error_log("Erro no método direto: " . $e->getMessage());
             }
-        }
 
-        // Método 3: Se ainda não temos dados, mostrar todas as categorias com 0 reports
-        if (empty($reportsByCategory) && $categoryNameField) {
-            try {
-                $categories = DB::table('categories')->get();
-                foreach ($categories as $category) {
-                    $categoryName = property_exists($category, $categoryNameField)
-                        ? $category->$categoryNameField
-                        : 'Categoria sem nome';
+            if (empty($reportsByCategory) && $hasCategoryIdColumn) {
+                // Método 2: Usar coluna category_id
+                try {
+                    $categoryData = DB::table('reports')
+                        ->join('categories', 'reports.category_id', '=', 'categories.id')
+                        ->select('categories.name', 'categories.id', DB::raw('COUNT(*) as count'))
+                        ->groupBy('categories.id', 'categories.name')
+                        ->orderBy('count', 'desc')
+                        ->get();
 
-                    $reportsByCategory[] = [
-                        'name' => $categoryName,
-                        'count' => 0
+                    foreach ($categoryData as $item) {
+                        $categoryName = property_exists($item, 'name') ? $item->name : 'Categoria sem nome';
+                        $reportsByCategory[] = [
+                            'name' => $categoryName,
+                            'count' => $item->count ?? 0
+                        ];
+                    }
+                } catch (\Exception $e) {
+                    $reportsByCategory = [];
+                }
+            }
+
+            // Se ainda estiver vazio, criar dados com todas as categorias (zero reports)
+            if (empty($reportsByCategory)) {
+                try {
+                    $categories = DB::table('categories')->get();
+                    foreach ($categories as $category) {
+                        $categoryName = property_exists($category, 'name') ? $category->name :
+                                       (property_exists($category, 'category_name') ? $category->category_name : 'Categoria sem nome');
+
+                        $reportsByCategory[] = [
+                            'name' => $categoryName,
+                            'count' => 0
+                        ];
+                    }
+                } catch (\Exception $e) {
+                    // Se não conseguir ler categories, criar uma entrada padrão
+                    $reportsByCategory = [
+                        ['name' => 'Sem dados de categorias', 'count' => 0]
                     ];
                 }
-            } catch (\Exception $e) {
-                error_log("Erro ao carregar categorias: " . $e->getMessage());
             }
+
+            return response()->json([
+                'reports_by_category' => $reportsByCategory,
+                'resolution_rate_by_category' => $resolutionRateByCategory,
+                'debug_info' => [
+                    'category_report_table_exists' => $hasCategoryReportTable,
+                    'has_category_id_column' => $hasCategoryIdColumn,
+                    'reports_columns' => $reportsColumns,
+                    'categories_count' => DB::table('categories')->count(),
+                    'categories_structure' => DB::table('categories')->limit(1)->get()
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Erro ao carregar métricas de categoria: ' . $e->getMessage(),
+                'debug' => $e->getTraceAsString()
+            ], 500);
         }
-
-        // Método 4: Fallback final - contar reports sem categoria
-        if (empty($reportsByCategory)) {
-            $reportsWithoutCategory = DB::table('reports')
-                ->whereNull('category_id')
-                ->count();
-
-            $reportsWithCategory = $totalReports - $reportsWithoutCategory;
-
-            $reportsByCategory = [
-                ['name' => 'Reports sem categoria', 'count' => $reportsWithoutCategory],
-                ['name' => 'Reports com categoria (não identificados)', 'count' => $reportsWithCategory]
-            ];
-        }
-
-        // Informações de debug melhoradas
-        $debugInfo = [
-            'category_report_table_exists' => $hasCategoryReportTable,
-            'has_category_id_column' => $hasCategoryIdColumn,
-            'category_name_field_detected' => $categoryNameField,
-            'categories_columns' => $categoriesColumns,
-            'reports_columns' => $reportsColumns,
-            'categories_count' => DB::table('categories')->count(),
-            'total_reports' => $totalReports,
-            'method_used' => !empty($reportsByCategory) ? 'success' : 'fallback',
-            'pivot_table_records' => $hasCategoryReportTable ? DB::table('category_report')->count() : 0,
-            'reports_with_category_id' => $hasCategoryIdColumn ? DB::table('reports')->whereNotNull('category_id')->count() : 0,
-        ];
-
-        // Se encontrou dados, adicionar amostra da estrutura
-        if ($categoryNameField) {
-            try {
-                $debugInfo['categories_sample'] = DB::table('categories')->limit(2)->get();
-            } catch (\Exception $e) {
-                $debugInfo['categories_sample_error'] = $e->getMessage();
-            }
-        }
-
-        return response()->json([
-            'reports_by_category' => $reportsByCategory,
-            'resolution_rate_by_category' => $resolutionRateByCategory,
-            'debug_info' => $debugInfo
-        ]);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'error' => 'Erro ao carregar métricas de categoria: ' . $e->getMessage(),
-            'debug' => $e->getTraceAsString(),
-            'reports_by_category' => [['name' => 'Erro ao carregar categorias', 'count' => 0]],
-            'resolution_rate_by_category' => []
-        ], 500);
     }
-}
 
     /**
      * Métricas de utilizadores
