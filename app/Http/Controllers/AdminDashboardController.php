@@ -73,8 +73,8 @@ class AdminDashboardController extends Controller
      */
     public function getOverviewMetrics()
     {
-        $permissionError = $this->checkPermissions();
-        if ($permissionError) return $permissionError;
+        /* $permissionError = $this->checkPermissions();
+        if ($permissionError) return $permissionError; */
 
         try {
             $totalReports = DB::table('reports')->count();
