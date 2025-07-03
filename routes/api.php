@@ -6,6 +6,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReportDetailController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\AdminDashboardController;
 use App\Http\Middleware\JwtMiddleware;
 use Illuminate\Support\Facades\Route;
 
@@ -14,7 +15,6 @@ Route::post('login', [AuthController::class, 'login']);
 
 Route::get('address', [AddressController::class, 'index']);
 Route::post('address', [AddressController::class, 'store']);
-
 
 Route::middleware(JwtMiddleware::class)->group(function () {
     Route::get('reports', [ReportController::class, 'index']);
@@ -49,13 +49,13 @@ Route::middleware(JwtMiddleware::class)->group(function () {
     Route::delete('admin/users/{id}', [AuthController::class, 'deleteUser']);
 
     Route::prefix('admin/dashboard')->group(function () {
-        Route::get('debug', [App\Http\Controllers\AdminDashboardController::class, 'getDebugInfo']); // NOVA ROTA DEBUG
-        Route::get('overview', [App\Http\Controllers\AdminDashboardController::class, 'getOverviewMetrics']);
-        Route::get('resolution', [App\Http\Controllers\AdminDashboardController::class, 'getResolutionMetrics']);
-        Route::get('categories', [App\Http\Controllers\AdminDashboardController::class, 'getCategoryMetrics']);
-        Route::get('users', [App\Http\Controllers\AdminDashboardController::class, 'getUserMetrics']);
-        Route::get('financial', [App\Http\Controllers\AdminDashboardController::class, 'getFinancialMetrics']);
-        Route::get('priority', [App\Http\Controllers\AdminDashboardController::class, 'getPriorityMetrics']);
-        Route::get('export', [App\Http\Controllers\AdminDashboardController::class, 'getExportData']) ;
+        Route::get('debug', [AdminDashboardController::class, 'getDebugInfo']); // NOVA ROTA DEBUG
+        Route::get('overview', [AdminDashboardController::class, 'getOverviewMetrics']);
+        Route::get('resolution', [AdminDashboardController::class, 'getResolutionMetrics']);
+        Route::get('categories', [AdminDashboardController::class, 'getCategoryMetrics']);
+        Route::get('users', [AdminDashboardController::class, 'getUserMetrics']);
+        Route::get('financial', [AdminDashboardController::class, 'getFinancialMetrics']);
+        Route::get('priority', [AdminDashboardController::class, 'getPriorityMetrics']);
+        Route::get('export', [AdminDashboardController::class, 'getExportData']) ;
     });
 });
