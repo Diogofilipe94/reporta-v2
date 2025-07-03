@@ -56,6 +56,6 @@ Route::middleware(JwtMiddleware::class)->group(function () {
         Route::get('users', [App\Http\Controllers\AdminDashboardController::class, 'getUserMetrics']);
         Route::get('financial', [App\Http\Controllers\AdminDashboardController::class, 'getFinancialMetrics']);
         Route::get('priority', [App\Http\Controllers\AdminDashboardController::class, 'getPriorityMetrics']);
-        Route::get('export', [App\Http\Controllers\AdminDashboardController::class, 'getExportData']);
+        Route::get('export', [App\Http\Controllers\AdminDashboardController::class, 'getExportData']) ;
     });
 });
