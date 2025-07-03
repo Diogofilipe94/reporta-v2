@@ -44,9 +44,6 @@ Route::middleware(JwtMiddleware::class)->group(function () {
     Route::get('notifications/tokens', [NotificationController::class, 'getUserTokens']);
     Route::post('/notifications/token/unregister', [NotificationController::class, 'unregisterToken']);
 
-    Route::get('admin/users', [AuthController::class, 'getUserRoles']);
-    Route::put('admin/users/{id}/role', [AuthController::class, 'updateUserRole']);
-    Route::delete('admin/users/{id}', [AuthController::class, 'deleteUser']);
 
     Route::prefix('admin/dashboard')->group(function () {
         Route::get('debug', [App\Http\Controllers\AdminDashboardController::class, 'getDebugInfo']); // NOVA ROTA DEBUG
@@ -57,5 +54,9 @@ Route::middleware(JwtMiddleware::class)->group(function () {
         Route::get('financial', [App\Http\Controllers\AdminDashboardController::class, 'getFinancialMetrics']);
         Route::get('priority', [App\Http\Controllers\AdminDashboardController::class, 'getPriorityMetrics']);
         Route::get('export', [App\Http\Controllers\AdminDashboardController::class, 'getExportData']) ;
+
+        Route::get('users', [AuthController::class, 'getUserRoles']);
+        Route::put('users/{id}/role', [AuthController::class, 'updateUserRole']);
+        Route::delete('users/{id}', [AuthController::class, 'deleteUser']);
     });
 });
