@@ -78,7 +78,7 @@ class ReportController extends Controller
 
         if (!$report) {
             return response()->json([
-                'error' => 'Report not found'
+                'error' => 'Report não encontrado'
             ], 404);
         }
 
@@ -94,7 +94,7 @@ class ReportController extends Controller
 
         if (!$report) {
             return response()->json([
-                'error' => 'Report not found'
+                'error' => 'Report não encontrado'
             ], 404);
         }
 
@@ -103,7 +103,7 @@ class ReportController extends Controller
             $user->role->role !== 'admin' &&
             $user->role->role !== 'curator') {
             return response()->json([
-                'error' => 'Unauthorized to update this report'
+                'error' => 'Não autorizado a atualizar este report'
             ], 403);
         }
 
@@ -216,7 +216,7 @@ class ReportController extends Controller
 
         if (!$report) {
             return response()->json([
-                'error' => 'Report not found'
+                'error' => 'Report não encontrado'
             ], 404);
         }
 

@@ -14,7 +14,7 @@ use Carbon\Carbon;
 class AdminDashboardController extends Controller
 {
     /**
-     * Verificar se o utilizador tem permissões de admin ou curator
+     * Verificar se o utilizador tem permissões de admin ou moderador
      */
     private function checkPermissions()
     {
@@ -25,7 +25,7 @@ class AdminDashboardController extends Controller
         }
 
         if ($user->role->role !== 'admin' && $user->role->role !== 'curator') {
-            return response()->json(['error' => 'Acesso negado. Apenas administradores e curadores podem aceder ao dashboard.'], 403);
+            return response()->json(['error' => 'Acesso negado. Apenas administradores e moderadores podem aceder ao dashboard.'], 403);
         }
 
         return null;
@@ -72,7 +72,7 @@ class AdminDashboardController extends Controller
                     try {
                         $info['columns'][$table] = DB::getSchemaBuilder()->getColumnListing($table);
                     } catch (\Exception $e) {
-                        $info['columns'][$table] = 'Error: ' . $e->getMessage();
+                        $info['columns'][$table] = 'Erro: ' . $e->getMessage();
                     }
                 }
             }
@@ -98,7 +98,7 @@ class AdminDashboardController extends Controller
 
             return response()->json($info);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Debug error: ' . $e->getMessage()], 500);
+            return response()->json(['error' => 'Erro: ' . $e->getMessage()], 500);
         }
     }
 

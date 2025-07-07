@@ -114,7 +114,7 @@ class NotificationService
 
             return [
                 'success' => false,
-                'message' => 'Exceção ao enviar notificações',
+                'message' => 'Erro ao enviar notificações',
                 'error' => $e->getMessage(),
             ];
         }

@@ -43,7 +43,7 @@ class UpdateReportStatusRequest extends FormRequest
     {
         throw new HttpResponseException(
             response()->json([
-                'error' => 'Unauthorized. Only admin or curator can update status.'
+                'error' => 'Não autorizado, apenas administradores ou curadores podem atualizar o status do report.'
             ], 403)
         );
     }

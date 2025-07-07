@@ -21,7 +21,7 @@ class ReportDetailController extends Controller
         $user = auth()->user();
         if ($user->role->role !== 'admin' && $user->role->role !== 'curator') {
             return response()->json([
-                'error' => 'Não autorizado, apenas administradores ou curadores podem adicionar detalhes.'
+                'error' => 'Não autorizado, apenas administradores ou moderadores podem adicionar detalhes.'
             ], 403);
         }
 
@@ -79,7 +79,7 @@ class ReportDetailController extends Controller
         $user = auth()->user();
         if ($user->role->role !== 'admin' && $user->role->role !== 'curator') {
             return response()->json([
-                'error' => 'Não autorizado. Apenas administradores ou curadores podem atualizar detalhes.'
+                'error' => 'Não autorizado. Apenas administradores ou moderadores podem atualizar detalhes.'
             ], 403);
         }
 
