@@ -425,8 +425,60 @@ class AdminDashboardController extends Controller
         if ($permissionError) return $permissionError;
 
         try {
-            // Top utilizadores por reports
+            // Top 5 utilizadores por reports (dados completos para prémios)
             $topUsersByReports = DB::table('users')
+                ->leftJoin('reports', 'users.id', '=', 'reports.user_id')
+                ->leftJoin('statuses', 'reports.status_id', '=', 'statuses.id')
+                ->select(
+                    'users.id',
+                    'users.first_name',
+                    'users.last_name',
+                    'users.email',
+                    'users.points',
+                    'users.created_at as user_since',
+                    DB::raw('COUNT(reports.id) as total_reports'),
+                    DB::raw('SUM(CASE WHEN statuses.status = \'resolvido\' THEN 1 ELSE 0 END) as resolved_reports'),
+                    DB::raw('MAX(reports.created_at) as last_report_date'),
+                    DB::raw('MIN(reports.created_at) as first_report_date')
+                )
+                ->groupBy(
+                    'users.id', 'users.first_name', 'users.last_name',
+                    'users.email', 'users.points', 'users.created_at'
+                )
+                ->having('total_reports', '>', 0)  // Apenas users com reports
+                ->orderBy('total_reports', 'desc')
+                ->limit(5)  // Top 5 para prémios
+                ->get()
+                ->map(function($user) {
+                    $fullName = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+                    $resolutionRate = $user->total_reports > 0
+                        ? round(($user->resolved_reports / $user->total_reports) * 100, 1)
+                        : 0;
+
+                    return [
+                        'id' => $user->id,
+                        'full_name' => $fullName ?: 'Nome não definido',
+                        'first_name' => $user->first_name ?? '',
+                        'last_name' => $user->last_name ?? '',
+                        'email' => $user->email ?? 'Email não definido',
+                        'total_reports' => $user->total_reports ?? 0,
+                        'resolved_reports' => $user->resolved_reports ?? 0,
+                        'resolution_rate' => $resolutionRate,
+                        'current_points' => $user->points ?? 0,
+                        'user_since' => $user->user_since ? Carbon::parse($user->user_since)->format('d/m/Y') : 'N/A',
+                        'last_report_date' => $user->last_report_date ? Carbon::parse($user->last_report_date)->format('d/m/Y H:i') : 'N/A',
+                        'first_report_date' => $user->first_report_date ? Carbon::parse($user->first_report_date)->format('d/m/Y') : 'N/A',
+                        'days_active' => $user->first_report_date && $user->last_report_date
+                            ? Carbon::parse($user->first_report_date)->diffInDays(Carbon::parse($user->last_report_date)) + 1
+                            : 1,
+                        'avg_reports_per_month' => $user->first_report_date
+                            ? round($user->total_reports / max(1, Carbon::parse($user->first_report_date)->diffInMonths(Carbon::now()) + 1), 1)
+                            : 0
+                    ];
+                });
+
+            // Top 10 utilizadores para o gráfico (mantém funcionalidade existente)
+            $topUsersForChart = DB::table('users')
                 ->leftJoin('reports', 'users.id', '=', 'reports.user_id')
                 ->select(
                     'users.id',
@@ -437,6 +489,7 @@ class AdminDashboardController extends Controller
                     DB::raw('COUNT(reports.id) as reports_count')
                 )
                 ->groupBy('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.points')
+                ->having('reports_count', '>', 0)
                 ->orderBy('reports_count', 'desc')
                 ->limit(10)
                 ->get()
@@ -459,7 +512,8 @@ class AdminDashboardController extends Controller
                     'users.first_name',
                     'users.last_name',
                     'users.email',
-                    DB::raw('COUNT(reports.id) as recent_reports')
+                    DB::raw('COUNT(reports.id) as recent_reports'),
+                    DB::raw('MAX(reports.created_at) as most_recent_report')
                 )
                 ->groupBy('users.id', 'users.first_name', 'users.last_name', 'users.email')
                 ->orderBy('recent_reports', 'desc')
@@ -470,11 +524,14 @@ class AdminDashboardController extends Controller
                         'id' => $user->id,
                         'name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: 'Nome não definido',
                         'email' => $user->email ?? 'Email não definido',
-                        'recent_reports' => $user->recent_reports ?? 0
+                        'recent_reports' => $user->recent_reports ?? 0,
+                        'most_recent_report' => $user->most_recent_report
+                            ? Carbon::parse($user->most_recent_report)->format('d/m/Y H:i')
+                            : 'N/A'
                     ];
                 });
 
-            // Distribuição de pontos com tratamento de NULL
+            // Distribuição de pontos (mantém funcionalidade existente)
             $pointsDistribution = DB::table('users')
                 ->selectRaw('
                     CASE
@@ -490,14 +547,40 @@ class AdminDashboardController extends Controller
                 ->pluck('count', 'points_range')
                 ->toArray();
 
+            // Estatísticas dos top users para relatório
+            $topUsersStats = [
+                'total_reports_from_top_5' => $topUsersByReports->sum('total_reports'),
+                'avg_reports_top_5' => $topUsersByReports->avg('total_reports'),
+                'highest_resolution_rate' => $topUsersByReports->max('resolution_rate'),
+                'most_active_user' => $topUsersByReports->first(),
+                'total_points_top_5' => $topUsersByReports->sum('current_points'),
+            ];
+
             return response()->json([
-                'top_users_by_reports' => $topUsersByReports,
+                'top_users_by_reports' => $topUsersByReports,  // Dados completos para prémios
+                'top_users_for_chart' => $topUsersForChart,    // Para o gráfico existente
                 'active_users_last_30_days' => $activeUsers,
-                'points_distribution' => $pointsDistribution
+                'points_distribution' => $pointsDistribution,
+                'top_users_statistics' => $topUsersStats,
+                'awards_info' => [
+                    'top_5_users_for_awards' => $topUsersByReports->take(5)->toArray(),
+                    'generated_at' => Carbon::now()->format('d/m/Y H:i:s'),
+                    'total_eligible_users' => $topUsersByReports->count()
+                ]
             ]);
+
         } catch (\Exception $e) {
+            \Log::error('User Metrics Error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'error' => 'Erro ao carregar métricas de utilizadores: ' . $e->getMessage(),
+                'top_users_by_reports' => [],
+                'top_users_for_chart' => [],
+                'active_users_last_30_days' => [],
+                'points_distribution' => [],
                 'debug' => $e->getTraceAsString()
             ], 500);
         }
