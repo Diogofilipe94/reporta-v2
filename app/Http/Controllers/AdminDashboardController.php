@@ -265,9 +265,9 @@ class AdminDashboardController extends Controller
         if ($permissionError) return $permissionError;
 
         try {
-            // Primeiro, vamos obter todas as categorias disponíveis
+            // Obter todas as categorias usando a coluna correta "category"
             $allCategories = DB::table('categories')
-                ->select('id', 'name')
+                ->select('id', 'category as name')  // ← MUDANÇA AQUI: category as name
                 ->get()
                 ->keyBy('id');
 
@@ -279,7 +279,6 @@ class AdminDashboardController extends Controller
             $reportsColumns = DB::getSchemaBuilder()->getColumnListing('reports');
             $hasCategoryIdColumn = in_array('category_id', $reportsColumns);
 
-            // Log para debug
             \Log::info('Category Metrics Debug', [
                 'has_category_report_table' => $hasCategoryReportTable,
                 'has_category_id_column' => $hasCategoryIdColumn,
@@ -292,11 +291,12 @@ class AdminDashboardController extends Controller
                     ->join('categories', 'category_report.category_id', '=', 'categories.id')
                     ->select(
                         'categories.id',
-                        'categories.name',
+                        'categories.category as name',  // ← MUDANÇA AQUI
                         DB::raw('COUNT(category_report.report_id) as report_count')
                     )
-                    ->groupBy('categories.id', 'categories.name')
-                    ->get();
+                    ->groupBy('categories.id', 'categories.category')  // ← MUDANÇA AQUI
+                    ->get()
+                    ->keyBy('id');
 
                 // Taxa de resolução usando tabela pivot
                 $resolutionData = DB::table('category_report')
@@ -305,11 +305,11 @@ class AdminDashboardController extends Controller
                     ->join('statuses', 'reports.status_id', '=', 'statuses.id')
                     ->select(
                         'categories.id',
-                        'categories.name',
+                        'categories.category as name',  // ← MUDANÇA AQUI
                         DB::raw('COUNT(reports.id) as total_reports'),
                         DB::raw('SUM(CASE WHEN statuses.status = \'resolvido\' THEN 1 ELSE 0 END) as resolved_reports')
                     )
-                    ->groupBy('categories.id', 'categories.name')
+                    ->groupBy('categories.id', 'categories.category')  // ← MUDANÇA AQUI
                     ->get()
                     ->keyBy('id');
 
@@ -319,11 +319,12 @@ class AdminDashboardController extends Controller
                     ->join('categories', 'reports.category_id', '=', 'categories.id')
                     ->select(
                         'categories.id',
-                        'categories.name',
+                        'categories.category as name',  // ← MUDANÇA AQUI
                         DB::raw('COUNT(reports.id) as report_count')
                     )
-                    ->groupBy('categories.id', 'categories.name')
-                    ->get();
+                    ->groupBy('categories.id', 'categories.category')  // ← MUDANÇA AQUI
+                    ->get()
+                    ->keyBy('id');
 
                 // Taxa de resolução usando coluna category_id
                 $resolutionData = DB::table('reports')
@@ -331,11 +332,11 @@ class AdminDashboardController extends Controller
                     ->join('statuses', 'reports.status_id', '=', 'statuses.id')
                     ->select(
                         'categories.id',
-                        'categories.name',
+                        'categories.category as name',  // ← MUDANÇA AQUI
                         DB::raw('COUNT(reports.id) as total_reports'),
                         DB::raw('SUM(CASE WHEN statuses.status = \'resolvido\' THEN 1 ELSE 0 END) as resolved_reports')
                     )
-                    ->groupBy('categories.id', 'categories.name')
+                    ->groupBy('categories.id', 'categories.category')  // ← MUDANÇA AQUI
                     ->get()
                     ->keyBy('id');
 
@@ -347,13 +348,8 @@ class AdminDashboardController extends Controller
 
             // Construir array de reports por categoria
             foreach ($allCategories as $categoryId => $category) {
-                $reportCount = 0;
-
-                // Procurar dados desta categoria nos resultados
-                $categoryData = $categoryReports->firstWhere('id', $categoryId);
-                if ($categoryData) {
-                    $reportCount = $categoryData->report_count ?? 0;
-                }
+                $categoryData = $categoryReports->get($categoryId);
+                $reportCount = $categoryData ? ($categoryData->report_count ?? 0) : 0;
 
                 $reportsByCategory[] = [
                     'name' => $category->name ?? 'Categoria sem nome',
@@ -365,8 +361,8 @@ class AdminDashboardController extends Controller
             foreach ($allCategories as $categoryId => $category) {
                 $resolutionInfo = $resolutionData->get($categoryId);
 
-                $total = $resolutionInfo->total_reports ?? 0;
-                $resolved = $resolutionInfo->resolved_reports ?? 0;
+                $total = $resolutionInfo ? ($resolutionInfo->total_reports ?? 0) : 0;
+                $resolved = $resolutionInfo ? ($resolutionInfo->resolved_reports ?? 0) : 0;
                 $resolutionRate = $total > 0 ? round(($resolved / $total) * 100, 2) : 0;
 
                 $resolutionRateByCategory[] = [
@@ -382,8 +378,8 @@ class AdminDashboardController extends Controller
                 return $b['count'] <=> $a['count'];
             });
 
-            \Log::info('Category Metrics Result', [
-                'reports_by_category_count' => count($reportsByCategory),
+            \Log::info('Category Metrics Success', [
+                'categories_found' => count($reportsByCategory),
                 'sample_data' => array_slice($reportsByCategory, 0, 3)
             ]);
 
@@ -394,15 +390,17 @@ class AdminDashboardController extends Controller
                     'category_report_table_exists' => $hasCategoryReportTable,
                     'has_category_id_column' => $hasCategoryIdColumn,
                     'total_categories' => $allCategories->count(),
-                    'total_reports_with_categories' => $categoryReports->sum('report_count'),
-                    'sample_category_data' => $categoryReports->take(3)->toArray()
+                    'categories_with_reports' => $categoryReports->count(),
+                    'column_used' => 'category',
+                    'sample_categories' => $allCategories->take(3)->toArray()
                 ]
             ]);
 
         } catch (\Exception $e) {
             \Log::error('Category Metrics Error', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'line' => $e->getLine(),
+                'file' => $e->getFile()
             ]);
 
             return response()->json([
@@ -411,7 +409,8 @@ class AdminDashboardController extends Controller
                 'resolution_rate_by_category' => [],
                 'debug' => [
                     'error_line' => $e->getLine(),
-                    'error_file' => $e->getFile()
+                    'error_file' => $e->getFile(),
+                    'sql_error' => $e->getMessage()
                 ]
             ], 500);
         }
