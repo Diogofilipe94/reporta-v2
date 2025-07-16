@@ -265,112 +265,127 @@ class AdminDashboardController extends Controller
         if ($permissionError) return $permissionError;
 
         try {
+            // Primeiro, vamos obter todas as categorias disponíveis
+            $allCategories = DB::table('categories')
+                ->select('id', 'name')
+                ->get()
+                ->keyBy('id');
+
             $reportsByCategory = [];
             $resolutionRateByCategory = [];
 
-            // Verificar se existe tabela category_report
+            // Verificar estrutura da base de dados
             $hasCategoryReportTable = DB::getSchemaBuilder()->hasTable('category_report');
-
-            // Verificar se reports tem coluna category_id
             $reportsColumns = DB::getSchemaBuilder()->getColumnListing('reports');
             $hasCategoryIdColumn = in_array('category_id', $reportsColumns);
 
+            // Log para debug
+            \Log::info('Category Metrics Debug', [
+                'has_category_report_table' => $hasCategoryReportTable,
+                'has_category_id_column' => $hasCategoryIdColumn,
+                'categories_count' => $allCategories->count()
+            ]);
+
             if ($hasCategoryReportTable) {
-                // Método 1: Usar tabela pivot
-                try {
-                    $categoryData = DB::table('category_report')
-                        ->join('categories', 'category_report.category_id', '=', 'categories.id')
-                        ->select('categories.name', 'categories.id', DB::raw('COUNT(*) as count'))
-                        ->groupBy('categories.id', 'categories.name')
-                        ->orderBy('count', 'desc')
-                        ->get();
+                // Método 1: Usar tabela pivot category_report
+                $categoryReports = DB::table('category_report')
+                    ->join('categories', 'category_report.category_id', '=', 'categories.id')
+                    ->select(
+                        'categories.id',
+                        'categories.name',
+                        DB::raw('COUNT(category_report.report_id) as report_count')
+                    )
+                    ->groupBy('categories.id', 'categories.name')
+                    ->get();
 
-                    foreach ($categoryData as $item) {
-                        // Verificar se a propriedade existe antes de usar
-                        $categoryName = property_exists($item, 'name') ? $item->name : 'Categoria sem nome';
-                        $reportsByCategory[] = [
-                            'name' => $categoryName,
-                            'count' => $item->count ?? 0
-                        ];
-                    }
+                // Taxa de resolução usando tabela pivot
+                $resolutionData = DB::table('category_report')
+                    ->join('categories', 'category_report.category_id', '=', 'categories.id')
+                    ->join('reports', 'category_report.report_id', '=', 'reports.id')
+                    ->join('statuses', 'reports.status_id', '=', 'statuses.id')
+                    ->select(
+                        'categories.id',
+                        'categories.name',
+                        DB::raw('COUNT(reports.id) as total_reports'),
+                        DB::raw('SUM(CASE WHEN statuses.status = \'resolvido\' THEN 1 ELSE 0 END) as resolved_reports')
+                    )
+                    ->groupBy('categories.id', 'categories.name')
+                    ->get()
+                    ->keyBy('id');
 
-                    // Taxa de resolução por categoria
-                    $resolutionData = DB::table('category_report')
-                        ->join('categories', 'category_report.category_id', '=', 'categories.id')
-                        ->join('reports', 'category_report.report_id', '=', 'reports.id')
-                        ->join('statuses', 'reports.status_id', '=', 'statuses.id')
-                        ->select(
-                            'categories.name',
-                            'categories.id',
-                            DB::raw('COUNT(*) as total'),
-                            DB::raw('SUM(CASE WHEN statuses.status = ? THEN 1 ELSE 0 END) as resolved')
-                        )
-                        ->setBindings(['resolvido'])
-                        ->groupBy('categories.id', 'categories.name')
-                        ->get();
+            } else if ($hasCategoryIdColumn) {
+                // Método 2: Usar coluna category_id diretamente
+                $categoryReports = DB::table('reports')
+                    ->join('categories', 'reports.category_id', '=', 'categories.id')
+                    ->select(
+                        'categories.id',
+                        'categories.name',
+                        DB::raw('COUNT(reports.id) as report_count')
+                    )
+                    ->groupBy('categories.id', 'categories.name')
+                    ->get();
 
-                    foreach ($resolutionData as $item) {
-                        $categoryName = property_exists($item, 'name') ? $item->name : 'Categoria sem nome';
-                        $total = $item->total ?? 0;
-                        $resolved = $item->resolved ?? 0;
-                        $resolutionRate = $total > 0 ? round(($resolved / $total) * 100, 2) : 0;
+                // Taxa de resolução usando coluna category_id
+                $resolutionData = DB::table('reports')
+                    ->join('categories', 'reports.category_id', '=', 'categories.id')
+                    ->join('statuses', 'reports.status_id', '=', 'statuses.id')
+                    ->select(
+                        'categories.id',
+                        'categories.name',
+                        DB::raw('COUNT(reports.id) as total_reports'),
+                        DB::raw('SUM(CASE WHEN statuses.status = \'resolvido\' THEN 1 ELSE 0 END) as resolved_reports')
+                    )
+                    ->groupBy('categories.id', 'categories.name')
+                    ->get()
+                    ->keyBy('id');
 
-                        $resolutionRateByCategory[] = [
-                            'name' => $categoryName,
-                            'total' => $total,
-                            'resolved' => $resolved,
-                            'resolution_rate' => $resolutionRate
-                        ];
-                    }
-                } catch (\Exception $e) {
-                    // Se falhar, tentar método alternativo
-                    $reportsByCategory = [];
-                    $resolutionRateByCategory = [];
-                }
+            } else {
+                // Fallback: Nenhum relacionamento encontrado
+                $categoryReports = collect();
+                $resolutionData = collect();
             }
 
-            if (empty($reportsByCategory) && $hasCategoryIdColumn) {
-                // Método 2: Usar coluna category_id
-                try {
-                    $categoryData = DB::table('reports')
-                        ->join('categories', 'reports.category_id', '=', 'categories.id')
-                        ->select('categories.name', 'categories.id', DB::raw('COUNT(*) as count'))
-                        ->groupBy('categories.id', 'categories.name')
-                        ->orderBy('count', 'desc')
-                        ->get();
+            // Construir array de reports por categoria
+            foreach ($allCategories as $categoryId => $category) {
+                $reportCount = 0;
 
-                    foreach ($categoryData as $item) {
-                        $categoryName = property_exists($item, 'name') ? $item->name : 'Categoria sem nome';
-                        $reportsByCategory[] = [
-                            'name' => $categoryName,
-                            'count' => $item->count ?? 0
-                        ];
-                    }
-                } catch (\Exception $e) {
-                    $reportsByCategory = [];
+                // Procurar dados desta categoria nos resultados
+                $categoryData = $categoryReports->firstWhere('id', $categoryId);
+                if ($categoryData) {
+                    $reportCount = $categoryData->report_count ?? 0;
                 }
+
+                $reportsByCategory[] = [
+                    'name' => $category->name ?? 'Categoria sem nome',
+                    'count' => (int) $reportCount
+                ];
             }
 
-            // Se ainda estiver vazio, criar dados com todas as categorias (zero reports)
-            if (empty($reportsByCategory)) {
-                try {
-                    $categories = DB::table('categories')->get();
-                    foreach ($categories as $category) {
-                        $categoryName = property_exists($category, 'name') ? $category->name :
-                                       (property_exists($category, 'category_name') ? $category->category_name : 'Categoria sem nome');
+            // Construir array de taxa de resolução por categoria
+            foreach ($allCategories as $categoryId => $category) {
+                $resolutionInfo = $resolutionData->get($categoryId);
 
-                        $reportsByCategory[] = [
-                            'name' => $categoryName,
-                            'count' => 0
-                        ];
-                    }
-                } catch (\Exception $e) {
-                    // Se não conseguir ler categories, criar uma entrada padrão
-                    $reportsByCategory = [
-                        ['name' => 'Sem dados de categorias', 'count' => 0]
-                    ];
-                }
+                $total = $resolutionInfo->total_reports ?? 0;
+                $resolved = $resolutionInfo->resolved_reports ?? 0;
+                $resolutionRate = $total > 0 ? round(($resolved / $total) * 100, 2) : 0;
+
+                $resolutionRateByCategory[] = [
+                    'name' => $category->name ?? 'Categoria sem nome',
+                    'total' => (int) $total,
+                    'resolved' => (int) $resolved,
+                    'resolution_rate' => $resolutionRate
+                ];
             }
+
+            // Ordenar por count decrescente
+            usort($reportsByCategory, function($a, $b) {
+                return $b['count'] <=> $a['count'];
+            });
+
+            \Log::info('Category Metrics Result', [
+                'reports_by_category_count' => count($reportsByCategory),
+                'sample_data' => array_slice($reportsByCategory, 0, 3)
+            ]);
 
             return response()->json([
                 'reports_by_category' => $reportsByCategory,
@@ -378,15 +393,26 @@ class AdminDashboardController extends Controller
                 'debug_info' => [
                     'category_report_table_exists' => $hasCategoryReportTable,
                     'has_category_id_column' => $hasCategoryIdColumn,
-                    'reports_columns' => $reportsColumns,
-                    'categories_count' => DB::table('categories')->count(),
-                    'categories_structure' => DB::table('categories')->limit(1)->get()
+                    'total_categories' => $allCategories->count(),
+                    'total_reports_with_categories' => $categoryReports->sum('report_count'),
+                    'sample_category_data' => $categoryReports->take(3)->toArray()
                 ]
             ]);
+
         } catch (\Exception $e) {
+            \Log::error('Category Metrics Error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'error' => 'Erro ao carregar métricas de categoria: ' . $e->getMessage(),
-                'debug' => $e->getTraceAsString()
+                'reports_by_category' => [],
+                'resolution_rate_by_category' => [],
+                'debug' => [
+                    'error_line' => $e->getLine(),
+                    'error_file' => $e->getFile()
+                ]
             ], 500);
         }
     }
