@@ -466,7 +466,7 @@ class AdminDashboardController extends Controller
     }
 
     /**
-     * Métricas de utilizadores - VERSÃO MELHORADA COM TIPAGEM CONSISTENTE
+     * Métricas de utilizadores - VERSÃO CORRIGIDA PARA POSTGRESQL
      */
     public function getUserMetrics()
     {
@@ -522,7 +522,7 @@ class AdminDashboardController extends Controller
     }
 
     /**
-     * Obter top users para prémios - corresponde à interface TopUserForAwards
+     * Obter top users para prémios - CORRIGIDO PARA POSTGRESQL
      */
     private function getTopUsersForAwards(): array
     {
@@ -545,7 +545,8 @@ class AdminDashboardController extends Controller
                 'users.id', 'users.first_name', 'users.last_name',
                 'users.email', 'users.points', 'users.created_at'
             )
-            ->having('total_reports', '>', 0)
+            // ✅ CORRIGIDO: Usar função agregada em vez do alias no HAVING
+            ->havingRaw('COUNT(reports.id) > 0')
             ->orderBy('total_reports', 'desc')
             ->limit(5)
             ->get();
@@ -591,7 +592,7 @@ class AdminDashboardController extends Controller
     }
 
     /**
-     * Obter top users para gráfico - corresponde à interface BasicUser
+     * Obter top users para gráfico - CORRIGIDO PARA POSTGRESQL
      */
     private function getTopUsersForChart(): array
     {
@@ -606,7 +607,8 @@ class AdminDashboardController extends Controller
                 DB::raw('COUNT(reports.id) as reports_count')
             )
             ->groupBy('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.points')
-            ->having('reports_count', '>', 0)
+            // ✅ CORRIGIDO: Usar função agregada em vez do alias no HAVING
+            ->havingRaw('COUNT(reports.id) > 0')
             ->orderBy('reports_count', 'desc')
             ->limit(10)
             ->get();
