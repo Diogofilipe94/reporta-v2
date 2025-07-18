@@ -69,7 +69,7 @@ class User extends Authenticatable implements JWTSubject
 
         $totalPoints = ($pendingReports * 1) + ($inProgressReports * 5) + ($resolvedReports * 10);
 
-        // Atualiza os pontos do usuário
+        // Atualiza os pontos do utilizador
         $this->points = $totalPoints;
         $this->save();
 

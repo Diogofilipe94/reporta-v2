@@ -210,7 +210,7 @@ class ReportController extends Controller
         ]);
     }
 
-    public function destroy($id)
+   public function destroy($id)
     {
         $report = Report::where('id', $id)->first();
 
@@ -221,8 +221,10 @@ class ReportController extends Controller
         }
 
         $user = auth()->user();
+
         if($user->role->role !== 'admin' &&
-            $user->role->role !== 'curator') {
+            $user->role->role !== 'curator' &&
+            $report->user_id !== $user->id) {
             return response()->json([
                 'error' => 'Não autorizado a eliminar este report'
             ], 403);
